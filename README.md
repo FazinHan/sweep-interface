@@ -22,3 +22,8 @@ conda activate <env-name>
 1) Discover within the directory `data` the subdirectory that corresponds to the experiment of interest.
 2) Run `plotter.py` with the name of this subdirectory.
 3) Plot is displayed and also saved within the subdirectory.
+
+### Issues
+Magnetic field sweep will be restricted by the calibration resolution due to the lookup function, current sweep does not suffer from this.
+
+Control signals are inaccurate for $|\text{current}|<1$.
