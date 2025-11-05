@@ -2,6 +2,9 @@ import pyvisa
 import time,os
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class MagnetController:
     """
@@ -44,23 +47,17 @@ class MagnetController:
     def connect(self):
         """Initializes and configures the serial connection."""
         print(f"Connecting to {self.resource_name} at {self.baud_rate} baud...")
-        try:
-            self.inst = self.rm.open_resource(self.resource_name)
-            self.inst.baud_rate = self.baud_rate
-            self.inst.data_bits = 8
-            self.inst.parity = pyvisa.constants.Parity.none
-            self.inst.stop_bits = pyvisa.constants.StopBits.one
-            self.inst.write_termination = None
-            self.inst.read_termination = None
-            self.inst.timeout = 2000  # 2-second timeout
-            self.inst.clear()
-            print("Connection successful.")
-            return True
-        except pyvisa.errors.VisaIOError as e:
-            print(f"--- VISA Error: Could not connect ---")
-            print(f"Details: {e}")
-            print("Is the device plugged in and is the proprietary software closed?")
-            return False
+        self.inst = self.rm.open_resource(self.resource_name)
+        self.inst.baud_rate = self.baud_rate
+        self.inst.data_bits = 8
+        self.inst.parity = pyvisa.constants.Parity.none
+        self.inst.stop_bits = pyvisa.constants.StopBits.one
+        self.inst.write_termination = None
+        self.inst.read_termination = None
+        self.inst.timeout = 2000  # 2-second timeout
+        self.inst.clear()
+        print("Connection successful.")
+        return True
 
     def disconnect(self):
         """Closes the connection."""

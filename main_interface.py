@@ -25,11 +25,11 @@ try:
     CURRENT_LOW = float(params["FIELD_LOW"])
     CURRENT_HIGH = float(params["FIELD_HIGH"])
     STEP = float(params.get("STEP", 10))
-    mag_used = False
+    mag_used = True
 except KeyError as e:
     CURRENT_HIGH = float(params.get("CURRENT_HIGH", 1))
     CURRENT_LOW = float(params.get("CURRENT_LOW", -1))
-    mag_used = True
+    mag_used = False
     STEP = float(params.get("STEP", .1))
 
 if mag_used:
@@ -48,7 +48,6 @@ vna = VNAController()
 magnet = MagnetController()
 
 vna.connect()
-magnet.connect()
 
 print("Sweeping...")
 
@@ -58,9 +57,10 @@ s_param_magnitudes = {'s11': [], 's12': [], 's21': [], 's22': []}
 for curr in currs:
     if mag_used:
         print(f"Setting field to {curr:.2f} mT")
+        magnet.set_field(curr)    
     else:
         print(f"Setting current to {curr:.2f} A")
-    magnet.set_current(curr)
+        magnet.set_current(curr)    
     time.sleep(2)  # Wait for the magnet to stabilize
     freq, s11 = vna.read_s11()
     _, s12 = vna.read_s12()

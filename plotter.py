@@ -8,7 +8,7 @@ load_dotenv()
 if len(sys.argv)>1:
     subdir = sys.argv[1]
 else:
-    subdir = "s_params_-1A_to_1A_step_0.1A"
+    subdir = "s_params_-1.0A_to_1.0A_step_0.1A"
 
 dir = os.path.join("data",subdir)
 
