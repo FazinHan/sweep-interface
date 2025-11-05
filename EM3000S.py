@@ -1,5 +1,5 @@
 import pyvisa
-import time
+import time,os
 import numpy as np
 import pandas as pd
 

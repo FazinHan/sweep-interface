@@ -1,7 +1,7 @@
 from EM3000S import MagnetController
 import pandas as pd
 import numpy as np
-import time, os
+import time
 
 calibration_resolution = 100
 
