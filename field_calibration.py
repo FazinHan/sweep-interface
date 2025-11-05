@@ -3,11 +3,11 @@ import pandas as pd
 import numpy as np
 import time
 
-calibration_resolution = 100
+calibration_resolution = 800
 
 print("Connecting to Magnet Controller...")
 
-magnet = MagnetController(resource_name='ASRL5::INSTR')
+magnet = MagnetController()
 
 curr_arr = np.linspace(-4,4,calibration_resolution)
 

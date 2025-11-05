@@ -77,6 +77,12 @@ class MagnetController:
         self.current = current
         print(f"Emulated Magnet current set to {current} A.")
 
+    def set_field(self, field):
+        if self.inst is None:
+            raise RuntimeError("Magnet Controller not connected.")
+        self.field = field
+        print(f"Emulated Magnet field set to {field} mT.")
+
     def stop_and_query_field(self):
         if self.inst is None:
             raise RuntimeError("Magnet Controller not connected.")
@@ -85,6 +91,11 @@ class MagnetController:
     def disconnect(self):
         print("Emulated Magnet Controller disconnected.")
         self.inst = None
+    
+    def query_field(self):
+        if self.inst is None:
+            raise RuntimeError("Magnet Controller not connected.")
+        return 150.0  # Return a dummy field value
 
 if __name__ == "__main__":
     magnet = MagnetController()

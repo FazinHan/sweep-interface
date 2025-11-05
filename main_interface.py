@@ -57,7 +57,7 @@ s_param_magnitudes = {'s11': [], 's12': [], 's21': [], 's22': []}
 for curr in currs:
     if mag_used:
         print(f"Setting field to {curr:.2f} mT")
-        magnet.set_field(curr)    
+        curr = magnet.set_field(curr)    
     else:
         print(f"Setting current to {curr:.2f} A")
         magnet.set_current(curr)    

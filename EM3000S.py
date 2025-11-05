@@ -126,6 +126,7 @@ class MagnetController:
         current_cal = dataframe['Current_A'].values
         idx = (np.abs(field_cal - field)).argmin()
         self.set_current(current_cal[idx])
+        return field_cal[idx]
 
     def stop_and_query_field(self):
         """

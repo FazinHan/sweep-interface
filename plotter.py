@@ -20,9 +20,16 @@ with open("params.txt", 'r') as f:
             key, value = line.strip().split('=')
             params[key] = value.strip().strip('"')
 
-min_curr = float(params.get("CURRENT_LOW", -1))
-max_curr = float(params.get("CURRENT_HIGH", 1))
-step = float(params.get("STEP", 0.1))
+try:
+    min_curr = float(params["FIELD_LOW"])
+    max_curr = float(params["FIELD_HIGH"])
+    step = float(params.get("STEP", 10))
+    mag_used = True
+except KeyError as e:
+    max_curr = float(params.get("CURRENT_HIGH", 1))
+    min_curr = float(params.get("CURRENT_LOW", -1))
+    mag_used = False
+    step = float(params.get("STEP", .1))
 
 def import_data(dirname=dir):
     for root, dirs, files in os.walk(dirname):
