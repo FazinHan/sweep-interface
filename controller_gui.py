@@ -6,9 +6,9 @@ import os
 
 # --- Configuration ---
 CONFIG_FILE = 'params.ini'
-DETECT_SCRIPT = os.path.join('detect.py')
-EXPERIMENT_SCRIPT = os.path.join('experiment.py')
-CALIBRATION_SCRIPT = os.path.join('calibration.py')
+DETECT_SCRIPT = 'detect.py'
+EXPERIMENT_SCRIPT = 'experiment.py'
+CALIBRATION_SCRIPT = 'calibration.py'
 
 # --- Backend Functions ---
 
@@ -24,9 +24,7 @@ def run_script(script_name):
                                    text=True)
         
         # Wait for the process to complete, get output
-        # This will block the GUI, but only for the duration of the script.
-        # A more complex app would use threading.
-        stdout, stderr = process.communicate() 
+        stdout, stderr = process.communicate(timeout=30) # 30-second timeout
         
         # --- Print output to console ---
         print("--- Script Output ---")
@@ -71,8 +69,8 @@ def load_config():
     
     try:
         # Load Experiment tab values
-        exp_low_var.set(config.get('Experiment', 'low', fallback='0'))
-        exp_high_var.set(config.get('Experiment', 'high', fallback='1'))
+        exp_low_var.set(config.get('Experiment', 'current_low', fallback='0'))
+        exp_high_var.set(config.get('Experiment', 'current_high', fallback='1'))
         exp_step_var.set(config.get('Experiment', 'step', fallback='0.1'))
         exp_unit_var.set(config.get('Experiment', 'unit', fallback='A'))
         
@@ -98,8 +96,8 @@ def save_config():
 
     try:
         # Save Experiment tab values
-        config['Experiment']['low'] = exp_low_var.get()
-        config['Experiment']['high'] = exp_high_var.get()
+        config['Experiment']['current_low'] = exp_low_var.get()
+        config['Experiment']['current_high'] = exp_high_var.get()
         config['Experiment']['step'] = exp_step_var.get()
         config['Experiment']['unit'] = exp_unit_var.get()
         
@@ -119,18 +117,41 @@ def save_config():
 
 def on_detect_click():
     """Handler for the 'Detect Insts!' button."""
-    # This function is re-used by both buttons
     run_script(DETECT_SCRIPT)
 
 def on_start_exp_click():
     """Saves config and runs the experiment script."""
+    # We can add a final check here
+    if not (exp_low_var.get() and exp_high_var.get() and exp_step_var.get()):
+        status_var.set("Error: All experiment fields must be filled.")
+        return
     save_config()
     run_script(EXPERIMENT_SCRIPT)
 
 def on_start_cal_click():
     """Saves config and runs the calibration script."""
+    if not cal_res_var.get():
+        status_var.set("Error: Resolution field must be filled.")
+        return
     save_config()
     run_script(CALIBRATION_SCRIPT)
+
+# --- START OF NEW VALIDATION CODE ---
+
+def _validate_float(new_value):
+    """
+    Validation function to allow empty string, or a valid float.
+    Allows for a single '-' for negative numbers and a single '.'
+    """
+    if new_value == "" or new_value == "-":
+        return True
+    try:
+        float(new_value)
+        return True
+    except ValueError:
+        return False
+
+# --- END OF NEW VALIDATION CODE ---
 
 
 # --- Main Application Setup ---
@@ -138,6 +159,11 @@ def on_start_cal_click():
 # Create the main window
 root = tk.Tk()
 root.title("Instrument Controller")
+
+# --- REGISTER THE VALIDATION COMMAND ---
+# We register it with the root window
+vcmd_float = (root.register(_validate_float), '%P')
+# '%P' is a substitution code: it passes the "value if change is allowed" to our function
 
 # Create string variables to hold the values from our widgets
 exp_low_var = tk.StringVar()
@@ -160,15 +186,27 @@ exp_inputs_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
 exp_buttons_frame = ttk.Frame(tab_exp)
 exp_buttons_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
-# Input fields
+# Input fields (NOW WITH VALIDATION)
 ttk.Label(exp_inputs_frame, text="Low:").grid(row=0, column=0, sticky='w', pady=5)
-ttk.Entry(exp_inputs_frame, textvariable=exp_low_var).grid(row=0, column=1, sticky='ew')
+exp_low_entry = ttk.Entry(exp_inputs_frame, 
+                          textvariable=exp_low_var, 
+                          validate='key',  # Validate on key press
+                          validatecommand=vcmd_float) # Use our float function
+exp_low_entry.grid(row=0, column=1, sticky='ew')
 
 ttk.Label(exp_inputs_frame, text="High:").grid(row=1, column=0, sticky='w', pady=5)
-ttk.Entry(exp_inputs_frame, textvariable=exp_high_var).grid(row=1, column=1, sticky='ew')
+exp_high_entry = ttk.Entry(exp_inputs_frame, 
+                           textvariable=exp_high_var, 
+                           validate='key', 
+                           validatecommand=vcmd_float)
+exp_high_entry.grid(row=1, column=1, sticky='ew')
 
 ttk.Label(exp_inputs_frame, text="Step:").grid(row=2, column=0, sticky='w', pady=5)
-ttk.Entry(exp_inputs_frame, textvariable=exp_step_var).grid(row=2, column=1, sticky='ew')
+exp_step_entry = ttk.Entry(exp_inputs_frame, 
+                           textvariable=exp_step_var, 
+                           validate='key', 
+                           validatecommand=vcmd_float)
+exp_step_entry.grid(row=2, column=1, sticky='ew')
 
 # Radio buttons
 radio_frame = ttk.Frame(exp_inputs_frame)
@@ -190,9 +228,13 @@ cal_inputs_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
 cal_buttons_frame = ttk.Frame(tab_cal)
 cal_buttons_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
-# Input fields
+# Input fields (NOW WITH VALIDATION)
 ttk.Label(cal_inputs_frame, text="Resolution:").grid(row=0, column=0, sticky='w', pady=5)
-ttk.Entry(cal_inputs_frame, textvariable=cal_res_var).grid(row=0, column=1, sticky='ew')
+cal_res_entry = ttk.Entry(cal_inputs_frame, 
+                          textvariable=cal_res_var, 
+                          validate='key', 
+                          validatecommand=vcmd_float)
+cal_res_entry.grid(row=0, column=1, sticky='ew')
 
 # Buttons
 ttk.Button(cal_buttons_frame, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)
