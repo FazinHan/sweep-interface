@@ -12,7 +12,7 @@ conda env create -f environment.yaml -n <env-name>
 conda activate <env-name>
 ```
 ### Usage
-`Simply run controller.py`
+Simply run `app.py`.
 
 ### Issues
 Magnetic field sweep will be restricted by the calibration resolution due to the lookup function, current sweep does not suffer from this.
