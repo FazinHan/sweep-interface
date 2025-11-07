@@ -43,7 +43,7 @@ for idx,curr in enumerate(curr_arr):
     data[idx,1] = field
 
 df = pd.DataFrame(data, columns=['Current_A', 'Field_mT'])
-df.to_csv('field_calibration_data.csv', index=False)
+df.to_csv(os.path.join('..', 'field_calibration_data.csv'), index=False)
 
 magnet.stop_and_query_field()
 magnet.disconnect()
