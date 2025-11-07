@@ -27,12 +27,14 @@ try:
 except Exception as e:
     raise ValueError("Error reading config file.")
 
-if len(sys.argv)>1:
-    subdir = sys.argv[1]
-else:
-    subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}"
+# if len(sys.argv)>1:
+    # subdir = sys.argv[1]
+# else:
+subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}"
 
 dir = os.path.join("data",subdir)
+
+assert os.path.isdir(dir)
 
 def import_data(dirname=dir):
     for root, dirs, files in os.walk(dirname):
