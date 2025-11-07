@@ -1,59 +1,38 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os, sys
+import configparser
 from dotenv import load_dotenv
 
 load_dotenv()
 
 dir = "data"
 
-with open("params.txt", 'r') as f:
-    lines = f.readlines()
-    params = {}
-    for line in lines:
-        if line.strip() and not line.startswith("---"):
-            key, value = line.strip().split('=')
-            params[key] = value.strip().strip('"')
+CONFIG_FILE = 'params.ini'
 
+if not os.path.exists(CONFIG_FILE):
+    raise FileNotFoundError("params.ini not found!")
+    
+config = configparser.ConfigParser()
+config.read(CONFIG_FILE)
+    
 try:
-    CURRENT_LOW = float(params["FIELD_LOW"])
-    CURRENT_HIGH = float(params["FIELD_HIGH"])
-    STEP = float(params.get("STEP", 10))
-    mag_used = True
-except KeyError as e:
-    CURRENT_HIGH = float(params.get("CURRENT_HIGH", 1))
-    CURRENT_LOW = float(params.get("CURRENT_LOW", -1))
-    mag_used = False
-    STEP = float(params.get("STEP", .1))
+    # Load Experiment tab values
+    UNIT = config.get('Experiment', 'unit', fallback='A')
+    CURRENT_LOW = float(config.get('Experiment', 'low', fallback='0'))
+    CURRENT_HIGH = float(config.get('Experiment', 'high', fallback='1'))
+    STEP = float(config.get('Experiment', 'step', fallback='0.1'))
+   
+    print("Config loaded successfully.")
+except Exception as e:
+    raise ValueError("Error reading config file.")
 
 if len(sys.argv)>1:
     subdir = sys.argv[1]
 else:
-    if mag_used:
-        subdir = f"s_params_{CURRENT_LOW}mT_to_{CURRENT_HIGH}mT_step_{STEP}mT"
-    else:
-        subdir = f"s_params_{CURRENT_LOW}A_to_{CURRENT_HIGH}A_step_{STEP}A"
+    subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}"
 
 dir = os.path.join("data",subdir)
-
-with open("params.txt", 'r') as f:
-    lines = f.readlines()
-    params = {}
-    for line in lines:
-        if line.strip() and not line.startswith("---"):
-            key, value = line.strip().split('=')
-            params[key] = value.strip().strip('"')
-
-try:
-    min_curr = float(params["FIELD_LOW"])
-    max_curr = float(params["FIELD_HIGH"])
-    step = float(params.get("STEP", 10))
-    mag_used = True
-except KeyError as e:
-    max_curr = float(params.get("CURRENT_HIGH", 1))
-    min_curr = float(params.get("CURRENT_LOW", -1))
-    mag_used = False
-    step = float(params.get("STEP", .1))
 
 def import_data(dirname=dir):
     for root, dirs, files in os.walk(dirname):
@@ -80,19 +59,16 @@ def matrixize(dirname=dir):
 
 def plotter(dirname=dir):
     freq, s_params = matrixize(dirname)
-    currs = np.arange(min_curr, max_curr + step, step)
+    currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
     fig, axs = plt.subplots(2,2, figsize=(6,6), sharex=False, sharey=True)
     dirs = s_params.keys()
     axs = axs.ravel()
     for idx, dir in enumerate(dirs):
         axs[idx].pcolormesh(currs, freq*1e-9, s_params[dir].real.T)
-        axs[idx].set_xlabel("Current (A)")
+        axs[idx].set_xlabel(f"Current ({UNIT})")
         if idx % 2 == 0:
             axs[idx].set_ylabel("Frequency (GHz)")
-        # axs[idx].set_box_aspect(1)
         axs[idx].set_title(dir.upper())
-        # axs[idx].set_yticks()
-        # axs[idx].set_ylim(min_curr, max_curr)
     plt.tight_layout()
     plt.savefig(os.path.join(dirname, "s_params_plot.png"), dpi=150)
     plt.show()

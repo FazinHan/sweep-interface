@@ -9,6 +9,7 @@ CONFIG_FILE = 'params.ini'
 DETECT_SCRIPT = 'detect.py'
 EXPERIMENT_SCRIPT = 'experiment.py'
 CALIBRATION_SCRIPT = 'calibration.py'
+PLOTTER_SCRIPT = 'plotter.py' # <-- NEW
 
 # --- Backend Functions ---
 
@@ -24,7 +25,7 @@ def run_script(script_name):
                                    text=True)
         
         # Wait for the process to complete, get output
-        stdout, stderr = process.communicate(timeout=30) # 30-second timeout
+        stdout, stderr = process.communicate()
         
         # --- Print output to console ---
         print("--- Script Output ---")
@@ -69,8 +70,8 @@ def load_config():
     
     try:
         # Load Experiment tab values
-        exp_low_var.set(config.get('Experiment', 'current_low', fallback='0'))
-        exp_high_var.set(config.get('Experiment', 'current_high', fallback='1'))
+        exp_low_var.set(config.get('Experiment', 'low', fallback='0'))
+        exp_high_var.set(config.get('Experiment', 'high', fallback='1'))
         exp_step_var.set(config.get('Experiment', 'step', fallback='0.1'))
         exp_unit_var.set(config.get('Experiment', 'unit', fallback='A'))
         
@@ -96,8 +97,8 @@ def save_config():
 
     try:
         # Save Experiment tab values
-        config['Experiment']['current_low'] = exp_low_var.get()
-        config['Experiment']['current_high'] = exp_high_var.get()
+        config['Experiment']['low'] = exp_low_var.get()
+        config['Experiment']['high'] = exp_high_var.get()
         config['Experiment']['step'] = exp_step_var.get()
         config['Experiment']['unit'] = exp_unit_var.get()
         
@@ -119,9 +120,18 @@ def on_detect_click():
     """Handler for the 'Detect Insts!' button."""
     run_script(DETECT_SCRIPT)
 
+def on_plot_click(): # <-- NEW
+    """Saves config and runs the plotter script."""
+    # Check if experiment fields are filled
+    if not (exp_low_var.get() and exp_high_var.get() and exp_step_var.get()):
+        status_var.set("Error: All experiment fields must be filled to plot.")
+        return
+    save_config()
+    run_script(PLOTTER_SCRIPT)
+
 def on_start_exp_click():
     """Saves config and runs the experiment script."""
-    # We can add a final check here
+    # Check if experiment fields are filled
     if not (exp_low_var.get() and exp_high_var.get() and exp_step_var.get()):
         status_var.set("Error: All experiment fields must be filled.")
         return
@@ -216,6 +226,7 @@ ttk.Radiobutton(radio_frame, text="mT", variable=exp_unit_var, value="mT").pack(
 
 # Buttons
 ttk.Button(exp_buttons_frame, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)
+ttk.Button(exp_buttons_frame, text="Plot", command=on_plot_click).pack(fill=tk.X, pady=5) # <-- NEW
 ttk.Button(exp_buttons_frame, text="START Exp", command=on_start_exp_click, style='Accent.TButton').pack(fill=tk.X, pady=5)
 
 # -- Calibration Tab --

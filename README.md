@@ -11,10 +11,8 @@ Recommended use with anaconda
 conda env create -f environment.yaml -n <env-name>
 conda activate <env-name>
 ```
-### Plotter Usage
-1) Change the parameters in `params.ini` to match the output data you need plotted.
-2) Run `plotter.py`.
-3) Plot is displayed and also saved within the subdirectory.
+### Usage
+`Simply run controller.py`
 
 ### Issues
 Magnetic field sweep will be restricted by the calibration resolution due to the lookup function, current sweep does not suffer from this.

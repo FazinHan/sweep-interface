@@ -25,6 +25,10 @@ try:
 except Exception as e:
     raise ValueError("Error reading config file.")
 
+if UNIT == 'A':
+    if CURRENT_HIGH > 4 or CURRENT_LOW < -4:
+        raise ValueError("Current out of range for Magnet Controller (-4A to 4A).")
+
 pathname = os.path.join(dir, f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}")
 
 s_params = ['s11', 's12', 's21', 's22']
