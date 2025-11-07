@@ -1,5 +1,4 @@
 .env
 *.csv
-dev/
 __pycache__
 field_calibration_data.csv

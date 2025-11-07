@@ -14,12 +14,31 @@ with open("params.ini", 'r') as f:
             key, value = line.strip().split('=')
             params[key] = value.strip().strip('"')
 
-"""
-Next block reads the parameters for the sweep from params.txt.
-It supports both magnetic field (in mT) and current (in A) sweeps,
-but prioritizes magnetic field if both are provided and defaults to
-a current sweep if not.
-"""
+CONFIG_FILE = 'params.ini'
+
+if not os.path.exists(CONFIG_FILE):
+    status_var.set("Error: params.ini not found!")
+    return
+    
+config = configparser.ConfigParser()
+config.read(CONFIG_FILE)
+    
+try:
+    # Load Experiment tab values
+    unit = config.get('Experiment', 'unit', fallback='A')
+    mag_used = (unit == 'mT')
+    exp_low_var.set(config.get('Experiment', 'low', fallback='0'))
+    exp_high_var.set(config.get('Experiment', 'high', fallback='1'))
+    exp_step_var.set(config.get('Experiment', 'step', fallback='0.1'))
+    
+    # Load Calibration tab values
+    cal_res_var.set(config.get('Calibration', 'cal_res', fallback='800'))
+    
+    status_var.set("Config loaded successfully.")
+except Exception as e:
+    status_var.set("Error reading config file.")
+    print(f"Error loading config: {e}")
+
 
 try:
     CURRENT_LOW = float(params["FIELD_LOW"])
