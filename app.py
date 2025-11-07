@@ -6,10 +6,10 @@ import os
 
 # --- Configuration ---
 CONFIG_FILE = 'params.ini'
-DETECT_SCRIPT = 'detect.py'
-EXPERIMENT_SCRIPT = 'experiment.py'
-CALIBRATION_SCRIPT = 'calibration.py'
-PLOTTER_SCRIPT = 'plotter.py' # <-- NEW
+DETECT_SCRIPT = os.path.join('controllers', 'detect.py')
+EXPERIMENT_SCRIPT = os.path.join('controllers', 'experiment.py')
+CALIBRATION_SCRIPT = os.path.join('controllers', 'calibration.py')
+PLOTTER_SCRIPT = os.path.join('controllers', 'plotter.py')
 
 # --- Backend Functions ---
 
