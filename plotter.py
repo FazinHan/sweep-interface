@@ -5,10 +5,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+    CURRENT_LOW = float(params["FIELD_LOW"])
+    CURRENT_HIGH = float(params["FIELD_HIGH"])
+    STEP = float(params.get("STEP", 10))
+    mag_used = True
+except KeyError as e:
+    CURRENT_HIGH = float(params.get("CURRENT_HIGH", 1))
+    CURRENT_LOW = float(params.get("CURRENT_LOW", -1))
+    mag_used = False
+    STEP = float(params.get("STEP", .1))
+
 if len(sys.argv)>1:
     subdir = sys.argv[1]
 else:
-    subdir = "s_params_-1.0A_to_1.0A_step_0.1A"
+    if mag_used:
+        subdir = f"s_params_{CURRENT_LOW}mT_to_{CURRENT_HIGH}mT_step_{STEP}mT"
+    else:
+        subdir = f"s_params_{CURRENT_LOW}A_to_{CURRENT_HIGH}A_step_{STEP}A"
 
 dir = os.path.join("data",subdir)
 
