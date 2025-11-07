@@ -3,7 +3,17 @@ import pandas as pd
 import numpy as np
 import time
 
-calibration_resolution = 800
+dir = "data"
+
+with open("params.txt", 'r') as f:
+    lines = f.readlines()
+    params = {}
+    for line in lines:
+        if line.strip() and not line.startswith("---"):
+            key, value = line.strip().split('=')
+            params[key] = value.strip().strip('"')
+
+calibration_resolution = params.get("CAL_RES", 800)
 
 print("Connecting to Magnet Controller...")
 
