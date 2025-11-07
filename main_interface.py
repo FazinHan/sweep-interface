@@ -6,7 +6,7 @@ import time, os
 
 dir = "data"
 
-with open("params.txt", 'r') as f:
+with open("params.ini", 'r') as f:
     lines = f.readlines()
     params = {}
     for line in lines:
