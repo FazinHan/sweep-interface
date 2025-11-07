@@ -42,7 +42,6 @@ class MagnetController:
         self.baud_rate = 19200
         self.inst = None
         self.rm = pyvisa.ResourceManager()
-        self.connect()
 
     def connect(self):
         """Initializes and configures the serial connection."""
@@ -115,6 +114,7 @@ class MagnetController:
         # value_bytes = self.CURRENT_MAP[amps]
         value_bytes = self._current_map(amps)
         self._run_start_sequence(value_bytes)
+        return amps
 
     def set_field(self, field):
         """

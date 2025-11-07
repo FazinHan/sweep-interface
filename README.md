@@ -11,16 +11,9 @@ Recommended use with anaconda
 conda env create -f environment.yaml -n <env-name>
 conda activate <env-name>
 ```
-
-### Usage
-1) Connect only the electromagnet by serial and VNA by an ethernet cable and run `instrument_detection.py` when both instruments are turned on. This will detect them and save their IDs to a `.env` file.
-2) With the field probe plugged in and positioned correctly, run `field_calibration.py`.
-3) Set desired parameters in `params.txt`. Either use `FIELD_LOW` and `FIELD_HIGH` with `STEP` (as in the example file) or use `CURRENT_LOW` and `CURRENT_HIGH` with `STEP`.
-4) Finally, run `main_interface.py` to start the experiment.
-
 ### Plotter Usage
-1) Discover within the directory `data` the subdirectory that corresponds to the experiment of interest.
-2) Run `plotter.py` with the name of this subdirectory.
+1) Change the parameters in `params.ini` to match the output data you need plotted.
+2) Run `plotter.py`.
 3) Plot is displayed and also saved within the subdirectory.
 
 ### Issues

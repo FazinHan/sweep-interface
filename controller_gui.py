@@ -6,9 +6,9 @@ import os
 
 # --- Configuration ---
 CONFIG_FILE = 'params.ini'
-DETECT_SCRIPT = os.path.join('dev','detect.py')
-EXPERIMENT_SCRIPT = os.path.join('dev','experiment.py')
-CALIBRATION_SCRIPT = os.path.join('dev','calibration.py')
+DETECT_SCRIPT = os.path.join('detect.py')
+EXPERIMENT_SCRIPT = os.path.join('experiment.py')
+CALIBRATION_SCRIPT = os.path.join('calibration.py')
 
 # --- Backend Functions ---
 
@@ -26,7 +26,7 @@ def run_script(script_name):
         # Wait for the process to complete, get output
         # This will block the GUI, but only for the duration of the script.
         # A more complex app would use threading.
-        stdout, stderr = process.communicate(timeout=30) # 30-second timeout
+        stdout, stderr = process.communicate() 
         
         # --- Print output to console ---
         print("--- Script Output ---")
@@ -98,8 +98,8 @@ def save_config():
 
     try:
         # Save Experiment tab values
-        config['Experiment']['current_low'] = exp_low_var.get()
-        config['Experiment']['current_high'] = exp_high_var.get()
+        config['Experiment']['low'] = exp_low_var.get()
+        config['Experiment']['high'] = exp_high_var.get()
         config['Experiment']['step'] = exp_step_var.get()
         config['Experiment']['unit'] = exp_unit_var.get()
         

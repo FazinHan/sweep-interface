@@ -1,23 +1,31 @@
-from EM3000S import MagnetController
+# from EM3000S import MagnetController
+from lab_emulator import MagnetController
 import pandas as pd
 import numpy as np
-import time
+import configparser
+import time, os
 
 dir = "data"
 
-with open("params.txt", 'r') as f:
-    lines = f.readlines()
-    params = {}
-    for line in lines:
-        if line.strip() and not line.startswith("---"):
-            key, value = line.strip().split('=')
-            params[key] = value.strip().strip('"')
+CONFIG_FILE = 'params.ini'
 
-calibration_resolution = params.get("CAL_RES", 800)
+if not os.path.exists(CONFIG_FILE):
+    raise FileNotFoundError("Error: params.ini not found!")
+    
+config = configparser.ConfigParser()
+config.read(CONFIG_FILE)
+    
+try:
+    # Load Experiment tab values
+    calibration_resolution = int(config.get('Calibration', 'cal_res', fallback='800'))   
+    print("Config loaded successfully.")
+except Exception as e:
+    raise ValueError("Error reading config file.")
 
 print("Connecting to Magnet Controller...")
 
 magnet = MagnetController()
+magnet.connect()
 
 curr_arr = np.linspace(-4,4,calibration_resolution)
 
