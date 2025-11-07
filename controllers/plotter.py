@@ -34,7 +34,7 @@ subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT
 
 dir = os.path.join("data",subdir)
 
-assert os.path.isdir(dir)
+assert os.path.isdir(dir), "Data does not exist, recheck values entered in inputs."
 
 def import_data(dirname=dir):
     for root, dirs, files in os.walk(dirname):
