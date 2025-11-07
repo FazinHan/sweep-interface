@@ -1,6 +1,6 @@
-# from EM3000S import MagnetController
-# from VNA import VNAController
-from lab_emulator import MagnetController, VNAController
+from EM3000S import MagnetController
+from VNA import VNAController
+# from lab_emulator import MagnetController, VNAController
 import numpy as np
 import configparser
 import time, os
