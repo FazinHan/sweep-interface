@@ -5,6 +5,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+dir = "data"
+
+with open("params.txt", 'r') as f:
+    lines = f.readlines()
+    params = {}
+    for line in lines:
+        if line.strip() and not line.startswith("---"):
+            key, value = line.strip().split('=')
+            params[key] = value.strip().strip('"')
+
 try:
     CURRENT_LOW = float(params["FIELD_LOW"])
     CURRENT_HIGH = float(params["FIELD_HIGH"])
