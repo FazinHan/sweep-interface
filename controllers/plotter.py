@@ -34,6 +34,11 @@ subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT
 
 dir = os.path.join("data",subdir)
 
+try:
+    currs = [float(i.split('mT.')[0]) for i in os.listdir(os.path.join(dir,'s21'))]
+except ValueError:
+    currs = [float(i.split('A.')[0]) for i in os.listdir(os.path.join(dir,'s21'))]
+
 assert os.path.isdir(dir), "Data does not exist, recheck values entered in inputs."
 
 def import_data(dirname=dir):
@@ -61,7 +66,8 @@ def matrixize(dirname=dir):
 
 def plotter(dirname=dir):
     freq, s_params = matrixize(dirname)
-    currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
+    print(currs)
+    # currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
     fig, axs = plt.subplots(2,2, figsize=(6,6), sharex=False, sharey=True)
     dirs = s_params.keys()
     axs = axs.ravel()
