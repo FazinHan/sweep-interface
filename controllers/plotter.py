@@ -23,6 +23,7 @@ try:
     CURRENT_HIGH = float(config.get('Experiment', 'high', fallback='1'))
     STEP = float(config.get('Experiment', 'step', fallback='0.1'))
    
+    print(UNIT, CURRENT_LOW, CURRENT_HIGH, STEP)
     print("Config loaded successfully.")
 except Exception as e:
     raise ValueError("Error reading config file.")
@@ -38,6 +39,7 @@ try:
     currs = [float(i.split('mT.')[0]) for i in os.listdir(os.path.join(dir,'s21'))]
 except ValueError:
     currs = [float(i.split('A.')[0]) for i in os.listdir(os.path.join(dir,'s21'))]
+currs = np.linspace(currs[0],currs[-1],len(currs))
 
 assert os.path.isdir(dir), "Data does not exist, recheck values entered in inputs."
 
@@ -72,7 +74,7 @@ def plotter(dirname=dir):
     dirs = s_params.keys()
     axs = axs.ravel()
     for idx, dir in enumerate(dirs):
-        axs[idx].pcolormesh(currs, freq*1e-9, s_params[dir].real.T)
+        axs[idx].pcolormesh(currs, freq*1e-9, 10*np.log(np.abs(s_params[dir].T)), cmap='inferno_r')
         axs[idx].set_xlabel(f"Current ({UNIT})")
         if idx % 2 == 0:
             axs[idx].set_ylabel("Frequency (GHz)")
@@ -82,5 +84,5 @@ def plotter(dirname=dir):
     plt.show()
 
 if __name__ == "__main__":
-    print(matrixize()[1]['s21'].shape)
+    # print(matrixize()[1]['s21'].shape)
     plotter()

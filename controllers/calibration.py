@@ -45,7 +45,7 @@ for idx,curr in enumerate(curr_arr):
 os.rename(os.path.join(dir, 'field_calibration_data.csv'), os.path.join(dir, 'field_calibration_data.csv.bak')) if os.path.exists(os.path.join(dir, 'field_calibration_data.csv')) else None
 
 df = pd.DataFrame(data, columns=['Current_A', 'Field_mT'])
-df.to_csv(os.path.join('..', 'field_calibration_data.csv'), index=False)
+df.to_csv(os.path.join( 'field_calibration_data.csv'), index=False)
 
 magnet.stop_and_query_field()
 magnet.disconnect()

@@ -1,3 +1,4 @@
 @ECHO OFF
 
-python app.py
+call conda activate nmqt-lab
+python.exe app.py
