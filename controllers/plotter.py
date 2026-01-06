@@ -74,7 +74,7 @@ def plotter(dirname=dir):
     dirs = s_params.keys()
     axs = axs.ravel()
     for idx, dir in enumerate(dirs):
-        axs[idx].pcolormesh(currs, freq*1e-9, np.abs(s_params[dir].T), cmap='inferno_r')
+        axs[idx].pcolormesh(currs, freq*1e-9, 10*np.log(np.abs(s_params[dir].T)), cmap='inferno_r')
         axs[idx].set_xlabel(f"Current ({UNIT})")
         if idx % 2 == 0:
             axs[idx].set_ylabel("Frequency (GHz)")
