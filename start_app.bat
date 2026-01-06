@@ -1,3 +1,4 @@
 @ECHO OFF
 
-C:\Users\admin\miniconda3\envs\nmqt-lab\python.exe app.py
+call conda activate nmqt-lab
+python.exe app.py

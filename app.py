@@ -22,7 +22,9 @@ def run_script(script_name):
         process = subprocess.Popen(['python', script_name], 
                                    stdout=subprocess.PIPE, 
                                    stderr=subprocess.PIPE, 
-                                   text=True)
+                                   text=True, 
+                                #    shell=True
+                                   )
 
         while True:
             output = process.stdout.readline()
