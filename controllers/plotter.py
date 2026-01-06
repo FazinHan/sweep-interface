@@ -38,6 +38,7 @@ try:
     currs = [float(i.split('mT.')[0]) for i in os.listdir(os.path.join(dir,'s21'))]
 except ValueError:
     currs = [float(i.split('A.')[0]) for i in os.listdir(os.path.join(dir,'s21'))]
+currs = np.linspace(currs[0],currs[-1],len(currs))
 
 assert os.path.isdir(dir), "Data does not exist, recheck values entered in inputs."
 

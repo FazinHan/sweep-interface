@@ -1,3 +1,3 @@
 @ECHO OFF
 
-python app.py
+C:\Users\admin\miniconda3\envs\nmqt-lab\python.exe app.py
