@@ -23,6 +23,14 @@ def run_script(script_name):
                                    stdout=subprocess.PIPE, 
                                    stderr=subprocess.PIPE, 
                                    text=True)
+
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                print(output.strip())
+        rc = process.poll()
         
         # Wait for the process to complete, get output
         stdout, stderr = process.communicate()
