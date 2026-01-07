@@ -1,10 +1,11 @@
 from EM3000S import MagnetController
-# from VNA import VNAController
+from VNA import VNAController
 # from lab_emulator import MagnetController, VNAController
-from lab_emulator import VNAController
+# from lab_emulator import VNAController
 import numpy as np
 import configparser
 import time, os
+import pandas as pd
 
 dir = "data"
 CONFIG_FILE = 'params.ini'
@@ -64,9 +65,26 @@ for curr in currs:
     _, s12 = vna.read_s12()
     _, s21 = vna.read_s21()
     _, s22 = vna.read_s22()
-    np.save(os.path.join(pathname, 'frequency.npy'), freq)
-    for s in s_params:
-        np.save(os.path.join(pathname, s, f"{curr_return:.2f}{UNIT}.npy"), eval(s))
+    df = {'Frequency (Hz)': freq,
+          'S11 Real': s11.real,
+          'S11 Imag': s11.imag,
+          'S12 Real': s12.real,
+          'S12 Imag': s12.imag,
+          'S21 Real': s21.real,
+          'S21 Imag': s21.imag,
+          'S22 Real': s22.real,
+          'S22 Imag': s22.imag,
+          'S11 (db)': 20 * np.log10(np.abs(s11)),
+          'S12 (db)': 20 * np.log10(np.abs(s12)),
+          'S21 (db)': 20 * np.log10(np.abs(s21)),
+          'S22 (db)': 20 * np.log10(np.abs(s22)),
+          'S11 Phase': np.angle(s11, deg=True),
+          'S12 Phase': np.angle(s12, deg=True),
+          'S21 Phase': np.angle(s21, deg=True),
+          'S22 Phase': np.angle(s22, deg=True)
+          }
+    df = pd.DataFrame(df)
+    df.to_csv(os.path.join(subdir, f"{curr_return:.2f}{UNIT}.csv"), index=False)
 
 print("Stopping magnet...")
 magnet.stop_and_query_field()
