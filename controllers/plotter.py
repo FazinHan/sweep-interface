@@ -82,11 +82,12 @@ def plotter(dirname=dir):
     dirs = s_params.keys()
     axs = axs.ravel()
     for idx, dir in enumerate(dirs):
-        axs[idx].pcolormesh(currs, freq*1e-9, s_params[dir].T, cmap='jet')
+        im=axs[idx].pcolormesh(currs, freq*1e-9, s_params[dir].T, cmap='jet')
         axs[idx].set_xlabel(f"{'Field' if UNIT == 'mT' else 'Current'} ({UNIT})")
         if idx % 2 == 0:
             axs[idx].set_ylabel("Frequency (GHz)")
         axs[idx].set_title(dir)
+        plt.colorbar(im, ax=axs[idx], label='Magnitude (dB)')
     plt.tight_layout()
     plt.savefig(os.path.join(dirname, "s_params_plot.png"), dpi=150)
     plt.show()
