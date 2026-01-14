@@ -22,7 +22,7 @@ class MagnetController:
             amp = 4.76264*amp**3 + 2.00444*amp**2 + 252.08648*amp - 8.46937
             print(amp)
             return int(amp)
-        pos = 1
+        pos = 1                        # 1 if mapped integer is positive, zero if negative
         if current_amps<0:
             current_amps = abs(current_amps)
             pos = 0
