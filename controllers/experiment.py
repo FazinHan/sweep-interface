@@ -1,6 +1,6 @@
-from EM3000S import MagnetController
-from VNA import VNAController
-# from lab_emulator import MagnetController, VNAController
+# from EM3000S import MagnetController
+# from VNA import VNAController
+from lab_emulator import MagnetController, VNAController
 # from lab_emulator import VNAController
 import numpy as np
 import configparser
@@ -35,13 +35,11 @@ pathname = os.path.join(dir, f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UN
 
 # s_params = ['s11', 's12', 's21', 's22']
 ss = 1
-while True:
-    try:
-        subdir = os.path.join(pathname, str(ss))
-        os.makedirs(subdir, exist_ok=False)
-        break
-    except FileExistsError:
-        ss += 1
+subdir = os.path.join(pathname, str(ss))
+while os.path.isdir(subdir):
+    ss += 1
+    subdir = os.path.join(pathname, str(ss))
+os.makedirs(subdir, exist_ok=False)
 
 
 print("Connecting to VNA and Magnet Controllers...")

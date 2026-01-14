@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import os, sys
 import configparser
 from dotenv import load_dotenv
+import pandas as pd
 
 load_dotenv()
 
@@ -35,26 +36,43 @@ subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT
 
 dir = os.path.join("data",subdir)
 
-try:
-    currs = [float(i.split('mT.')[0]) for i in os.listdir(os.path.join(dir,'s21'))]
-except ValueError:
-    currs = [float(i.split('A.')[0]) for i in os.listdir(os.path.join(dir,'s21'))]
-currs = np.linspace(currs[0],currs[-1],len(currs))
-
 assert os.path.isdir(dir), "Data does not exist, recheck values entered in inputs."
 
-def import_data(dirname=dir):
-    for root, dirs, files in os.walk(dirname):
-        # print(roots)
-        if dirs != []:
-            keys = dirs
-            freq = np.load(os.path.join(root, 'frequency.npy'))
-            s_param_dict = {key: [] for key in keys}
-            continue
-        if root[-3:] in keys:
-            for file in files:
-                s_param_dict[root[-3:]].append(np.load(os.path.join(root, file)))
+ss = 1
+subdir = os.path.join(dir, str(ss))
+while os.path.isdir(subdir):
+    ss += 1
+    subdir = os.path.join(dir, str(ss))
+else:
+    subdir = os.path.join(dir, str(ss-1))
 
+dir = subdir
+
+try:
+    currs = [float(i.split('mT.')[0]) for i in os.listdir(dir) if '.png' not in i]
+except ValueError:
+    currs = [float(i.split('A.')[0]) for i in os.listdir(dir) if '.png' not in i]
+currs = np.linspace(currs[0],currs[-1],len(currs))
+
+def import_data(dirname=dir):
+    # for root, dirs, files in os.walk(dirname):
+        # print(roots)
+        # if dirs != []:
+        #     keys = dirs
+        #     freq = np.load(os.path.join(root, 'frequency.npy'))
+        #     s_param_dict = {key: [] for key in keys}
+        #     continue
+        # if root[-3:] in keys:
+        #     for file in files:
+        #         s_param_dict[root[-3:]].append(np.load(os.path.join(root, file)))
+    files = [i for i in os.listdir(dirname) if '.png' not in i]
+    s_param_dict = {'S11 (db)': [], 'S12 (db)': [], 'S21 (db)': [], 'S22 (db)': []}
+    for file in files:
+        frame = pd.read_csv(os.path.join(dirname, file))
+        for key in s_param_dict.keys():
+            s_param_dict[key].append(frame[key].to_numpy(dtype=float))
+    frame = pd.read_csv(os.path.join(dirname, files[0]))
+    freq = frame['Frequency (Hz)'].to_numpy(dtype=float)
     return freq, s_param_dict
 
 def matrixize(dirname=dir):
@@ -74,11 +92,11 @@ def plotter(dirname=dir):
     dirs = s_params.keys()
     axs = axs.ravel()
     for idx, dir in enumerate(dirs):
-        axs[idx].pcolormesh(currs, freq*1e-9, 10*np.log(np.abs(s_params[dir].T)), cmap='inferno_r')
-        axs[idx].set_xlabel(f"Current ({UNIT})")
+        axs[idx].pcolormesh(currs, freq*1e-9, s_params[dir].T, cmap='jet')
+        axs[idx].set_xlabel(f"{'Field' if UNIT == 'mT' else 'Current'} ({UNIT})")
         if idx % 2 == 0:
             axs[idx].set_ylabel("Frequency (GHz)")
-        axs[idx].set_title(dir.upper())
+        axs[idx].set_title(dir)
     plt.tight_layout()
     plt.savefig(os.path.join(dirname, "s_params_plot.png"), dpi=150)
     plt.show()
