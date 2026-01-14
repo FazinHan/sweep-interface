@@ -55,16 +55,6 @@ except ValueError:
 currs = np.linspace(currs[0],currs[-1],len(currs))
 
 def import_data(dirname=dir):
-    # for root, dirs, files in os.walk(dirname):
-        # print(roots)
-        # if dirs != []:
-        #     keys = dirs
-        #     freq = np.load(os.path.join(root, 'frequency.npy'))
-        #     s_param_dict = {key: [] for key in keys}
-        #     continue
-        # if root[-3:] in keys:
-        #     for file in files:
-        #         s_param_dict[root[-3:]].append(np.load(os.path.join(root, file)))
     files = [i for i in os.listdir(dirname) if '.png' not in i]
     s_param_dict = {'S11 (db)': [], 'S12 (db)': [], 'S21 (db)': [], 'S22 (db)': []}
     for file in files:
