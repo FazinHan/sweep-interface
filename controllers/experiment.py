@@ -1,6 +1,6 @@
-# from EM3000S import MagnetController
-# from VNA import VNAController
-from lab_emulator import MagnetController, VNAController
+from EM3000S import MagnetController
+from VNA import VNAController
+# from lab_emulator import MagnetController, VNAController
 # from lab_emulator import VNAController
 import numpy as np
 import configparser
@@ -56,8 +56,11 @@ currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
 s_param_magnitudes = {'s11': [], 's12': [], 's21': [], 's22': []}
 
 for curr in currs:
-    print(f"Setting field to {curr:.2f} mT")
-    curr_return = magnet.set_field(curr)
+    print(f"Setting field to {curr:.2f} {UNIT}...")
+    if UNIT == 'mT':
+        curr_return = magnet.set_field(curr)
+    else:
+        curr_return = magnet.set_current(curr)
     time.sleep(2)  # Wait for the magnet to stabilize
     freq, s11 = vna.read_s11()
     _, s12 = vna.read_s12()

@@ -124,9 +124,10 @@ class MagnetController:
         dataframe = pd.read_csv('field_calibration_data.csv')
         field_cal = dataframe['Field_mT'].values
         current_cal = dataframe['Current_A'].values
-        idx = (np.abs(field_cal - field)).argmin()
-        self.set_current(current_cal[idx])
-        return field_cal[idx]
+        coeffs = np.polyfit(field_cal, current_cal, 1) # does curve fitting each time function is called - SLOW
+        current_from_field = np.poly1d(coeffs)
+        self.set_current(current_from_field(field))
+        return field
 
     def stop_and_query_field(self):
         """
