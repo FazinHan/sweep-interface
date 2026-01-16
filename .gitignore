@@ -4,3 +4,4 @@ __pycache__
 field_calibration_data.csv
 data/
 start_app.bat
+params.ini

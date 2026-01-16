@@ -35,13 +35,11 @@ pathname = os.path.join(dir, f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UN
 
 # s_params = ['s11', 's12', 's21', 's22']
 ss = 1
-while True:
-    try:
-        subdir = os.path.join(pathname, str(ss))
-        os.makedirs(subdir, exist_ok=False)
-        break
-    except FileExistsError:
-        ss += 1
+subdir = os.path.join(pathname, str(ss))
+while os.path.isdir(subdir):
+    ss += 1
+    subdir = os.path.join(pathname, str(ss))
+os.makedirs(subdir, exist_ok=False)
 
 
 print("Connecting to VNA and Magnet Controllers...")
@@ -58,8 +56,11 @@ currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
 s_param_magnitudes = {'s11': [], 's12': [], 's21': [], 's22': []}
 
 for curr in currs:
-    print(f"Setting field to {curr:.2f} mT")
-    curr_return = magnet.set_field(curr)
+    print(f"Setting field to {curr:.2f} {UNIT}...")
+    if UNIT == 'mT':
+        curr_return = magnet.set_field(curr)
+    else:
+        curr_return = magnet.set_current(curr)
     time.sleep(2)  # Wait for the magnet to stabilize
     freq, s11 = vna.read_s11()
     _, s12 = vna.read_s12()
