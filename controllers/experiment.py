@@ -80,10 +80,10 @@ for curr in currs:
     _, s22_3 = vna.read_s22()
 
     ### AVERAGE
-    s11 = np.mean(s11_1 + s11_2 + s11_3)
-    s12 = np.mean(s12_1 + s12_2 + s12_3)
-    s21 = np.mean(s21_1 + s21_2 + s21_3)
-    s22 = np.mean(s22_1 + s22_2 + s22_3)
+    s11 = (s11_1 + s11_2 + s11_3)/3
+    s12 = (s12_1 + s12_2 + s12_3)/3
+    s21 = (s21_1 + s21_2 + s21_3)/3
+    s22 = (s22_1 + s22_2 + s22_3)/3
 
 
     df = {'Frequency (Hz)': freq,
