@@ -14,6 +14,9 @@ conda activate <env-name>
 ### Usage
 Simply run `app.py`.
 
+### Data Output
+All data is saved in `\data`. `experiment.py` polls the VNA for its data three times, separated by two seconds. What is saved in the final data file is the mean of the three measurements.
+
 ### Issues
 Magnetic field sweep will be restricted by the calibration resolution due to the lookup function, current sweep does not suffer from this.
 

@@ -91,22 +91,22 @@ for curr in currs:
 
 
     df = {'Frequency (Hz)': freq,
-          'S11 Real Mean': s11.real,
-          'S11 Imag Mean': s11.imag,
-          'S12 Real Mean': s12.real,
-          'S12 Imag Mean': s12.imag,
-          'S21 Real Mean': s21.real,
-          'S21 Imag Mean': s21.imag,
-          'S22 Real Mean': s22.real,
-          'S22 Imag Mean': s22.imag,
-          'S11 (db) Mean': 20 * np.log10(np.abs(s11)),
-          'S12 (db) Mean': 20 * np.log10(np.abs(s12)),
-          'S21 (db) Mean': 20 * np.log10(np.abs(s21)),
-          'S22 (db) Mean': 20 * np.log10(np.abs(s22)),
-          'S11 Phase Mean': np.angle(s11, deg=True),
-          'S12 Phase Mean': np.angle(s12, deg=True),
-          'S21 Phase Mean': np.angle(s21, deg=True),
-          'S22 Phase Mean': np.angle(s22, deg=True)
+          'S11 Real': s11.real,
+          'S11 Imag': s11.imag,
+          'S12 Real': s12.real,
+          'S12 Imag': s12.imag,
+          'S21 Real': s21.real,
+          'S21 Imag': s21.imag,
+          'S22 Real': s22.real,
+          'S22 Imag': s22.imag,
+          'S11 (db)': 20 * np.log10(np.abs(s11)),
+          'S12 (db)': 20 * np.log10(np.abs(s12)),
+          'S21 (db)': 20 * np.log10(np.abs(s21)),
+          'S22 (db)': 20 * np.log10(np.abs(s22)),
+          'S11 Phase': np.angle(s11, deg=True),
+          'S12 Phase': np.angle(s12, deg=True),
+          'S21 Phase': np.angle(s21, deg=True),
+          'S22 Phase': np.angle(s22, deg=True)
           }
     df = pd.DataFrame(df)
     df.to_csv(os.path.join(subdir, f"{curr_return:.2f}{UNIT}.csv"), index=False)
