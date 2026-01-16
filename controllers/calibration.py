@@ -42,7 +42,7 @@ for idx,curr in enumerate(curr_arr):
     data[idx,0] = curr
     data[idx,1] = field
 
-os.rename(os.path.join('field_calibration_data.csv'), os.path.join('field_calibration_data.csv.bak')) if os.path.exists(os.path.join('field_calibration_data.csv')) else None
+# os.rename(os.path.join('field_calibration_data.csv'), os.path.join('field_calibration_data.csv.bak')) if os.path.exists(os.path.join('field_calibration_data.csv')) else None
 
 df = pd.DataFrame(data, columns=['Current_A', 'Field_mT'])
 df.to_csv(os.path.join( 'field_calibration_data.csv'), index=False)
