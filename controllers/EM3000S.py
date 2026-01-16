@@ -112,6 +112,7 @@ class MagnetController:
         #     return
 
         # value_bytes = self.CURRENT_MAP[amps]
+        assert abs(amps)<=4.0, "Current out of range for Magnet Controller (-4A to 4A)."
         value_bytes = self._current_map(amps)
         self._run_start_sequence(value_bytes)
         return amps
