@@ -21,3 +21,6 @@ All data is saved in `\data`. `experiment.py` polls the VNA for its data three t
 Magnetic field sweep will be restricted by the calibration resolution due to the lookup function, current sweep does not suffer from this.
 
 Control signals are inaccurate for $|\text{current}|<1$.
+
+### Codebase readme
+See the [README](controllers/README.md) file in the `controllers` directory.

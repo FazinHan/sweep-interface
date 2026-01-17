@@ -1,0 +1,3 @@
+# Device Controllers
+Within this directory are the device controllers, a plotter, and an emulator for debugging.
+`app.py` in the parent directory simply is a GUI that allows the user to enter desired parameters, which, upon button press are stored in `params.ini`. The buttons then launch one of the scripts in this directory as a subprocess, which read `params.ini` to determine operating ranges and run equipment.
