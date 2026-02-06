@@ -22,15 +22,15 @@ graph TD
     GUI -->|Writes| Config[(params.ini)]
     
     subgraph "Async Execution Loop"
-        GUI -- Spawns --> Subprocess((Subprocess))
-        Subprocess -- stdout/stderr --> Queue[Msg Queue]
-        Queue -- Updates --> GUI
+        GUI -- Spawns --> Subprocess((Subprocess Wrapper))
+        Queue[Msg Queue] -- Updates --> GUI
     end
 
     Subprocess -->|Executes| Scripts[Controllers/*.py]
     
     Scripts -->|Read| Config
     Scripts -->|Read| Env[(.env)]
+    Scripts -- stdout/stderr --> Queue
     Scripts -->|Read/Write| Hardware[Magnet & VNA]
     Scripts -->|Write| Data[(/data/ Output)]
 
