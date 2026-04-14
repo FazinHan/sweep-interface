@@ -1,5 +1,5 @@
-# from EM3000S import MagnetController
-from lab_emulator import MagnetController
+from EM3000S import MagnetController
+# from lab_emulator import MagnetController
 import pandas as pd
 import numpy as np
 import configparser
