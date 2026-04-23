@@ -22,12 +22,13 @@ try:
     CURRENT_LOW = float(config.get('Experiment', 'low', fallback='0'))
     CURRENT_HIGH = float(config.get('Experiment', 'high', fallback='1'))
     STEP = float(config.get('Experiment', 'step', fallback='0.1'))
+    DOWN = config.getboolean('Experiment', 'sweep_down', fallback=False)
    
     print("Config loaded successfully.")
 except Exception as e:
     raise ValueError("Error reading config file.")
 
-pathname = os.path.join(dir, f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}")
+pathname = os.path.join(dir, f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}{'_DOWN' if DOWN else ''}")
 
 # s_params = ['s11', 's12', 's21', 's22']
 ss = 1
@@ -49,6 +50,8 @@ vna.connect()
 print("Sweeping...")
 
 currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
+if DOWN:
+    currs = currs[::-1]  # Reverse the array if sweeping down
 s_param_magnitudes = {'s11': [], 's12': [], 's21': [], 's22': []}
 
 for curr in currs:

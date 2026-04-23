@@ -23,6 +23,7 @@ try:
     CURRENT_LOW = float(config.get('Experiment', 'low', fallback='0'))
     CURRENT_HIGH = float(config.get('Experiment', 'high', fallback='1'))
     STEP = float(config.get('Experiment', 'step', fallback='0.1'))
+    DOWN = config.getboolean('Experiment', 'sweep_down', fallback=False)
    
     print(UNIT, CURRENT_LOW, CURRENT_HIGH, STEP)
     print("Config loaded successfully.")
@@ -32,7 +33,7 @@ except Exception as e:
 # if len(sys.argv)>1:
     # subdir = sys.argv[1]
 # else:
-subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}"
+subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}{'_DOWN' if DOWN else ''}"
 
 dir = os.path.join("data",subdir)
 

@@ -14,6 +14,9 @@ EXPERIMENT_SCRIPT = os.path.join('controllers', 'experiment.py')
 CALIBRATION_SCRIPT = os.path.join('controllers', 'calibration.py')
 PLOTTER_SCRIPT = os.path.join('controllers', 'plotter.py')
 ABORT_SCRIPT = os.path.join('controllers', 'abort_all.py')
+SET_MAGNET_SCRIPT = os.path.join('controllers', 'set_magnet.py')
+PROBE_MAGNET_SCRIPT = os.path.join('controllers', 'probe_magnet.py')
+STOP_MAGNET_SCRIPT = os.path.join('controllers', 'stop_magnet.py')
 
 # --- Global State for Async Control ---
 # We need a reference to the current process to kill it later
@@ -114,24 +117,23 @@ def on_abort_click():
 # --- GUI Update Loop ---
 
 def check_queue():
-    """
-    Periodically checks the queue for messages from the background thread
-    and updates the GUI. This runs on the Main Thread.
-    """
     try:
         while True:
-            # Get messages without blocking
             msg_type, content = msg_queue.get_nowait()
             
             if msg_type == "status":
                 status_var.set(content)
             elif msg_type == "print":
-                print(content) # Or print to a Text widget if you add one later
+                # Intercept the probe result specifically
+                if content.startswith("PROBE_RESULT:"):
+                    val = content.split(":")[1].strip()
+                    mag_probe_var.set(f"{val} mT")
+                else:
+                    print(content) 
                 
     except queue.Empty:
         pass
     
-    # Schedule this function to run again in 100ms
     root.after(100, check_queue)
 
 
@@ -148,7 +150,10 @@ def load_config():
         exp_high_var.set(config.get('Experiment', 'high', fallback='1'))
         exp_step_var.set(config.get('Experiment', 'step', fallback='0.1'))
         exp_unit_var.set(config.get('Experiment', 'unit', fallback='A'))
+        exp_sweep_down_var.set(int(config.get('Experiment', 'sweep_down', fallback='0'))) # <-- ADD THIS LINE
         cal_res_var.set(config.get('Calibration', 'cal_res', fallback='800'))
+        mag_val_var.set(config.get('Magnet', 'value', fallback='0'))
+        mag_unit_var.set(config.get('Magnet', 'unit', fallback='A'))
         status_var.set("Config loaded successfully.")
     except Exception as e:
         status_var.set("Error reading config file.")
@@ -159,12 +164,16 @@ def save_config():
     config.read(CONFIG_FILE)
     if 'Experiment' not in config: config['Experiment'] = {}
     if 'Calibration' not in config: config['Calibration'] = {}
+    if 'Magnet' not in config: config['Magnet'] = {}
     try:
         config['Experiment']['low'] = exp_low_var.get()
         config['Experiment']['high'] = exp_high_var.get()
         config['Experiment']['step'] = exp_step_var.get()
         config['Experiment']['unit'] = exp_unit_var.get()
+        config['Experiment']['sweep_down'] = str(exp_sweep_down_var.get())
         config['Calibration']['cal_res'] = cal_res_var.get()
+        config['Magnet']['value'] = mag_val_var.get()
+        config['Magnet']['unit'] = mag_unit_var.get()
         with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
         # status_var.set("Parameters saved.") # Optional: don't overwrite "Running..." status
@@ -207,6 +216,20 @@ def _validate_float(new_value):
     except ValueError:
         return False
 
+def on_set_magnet_click():
+    if not mag_val_var.get():
+        status_var.set("Error: Magnet value must be filled.")
+        return
+    save_config()
+    schedule_script(SET_MAGNET_SCRIPT)
+
+def on_probe_magnet_click():
+    mag_probe_var.set("Reading...")
+    schedule_script(PROBE_MAGNET_SCRIPT)
+
+def on_stop_magnet_click():
+    schedule_script(STOP_MAGNET_SCRIPT)
+
 # --- Main Application Setup ---
 
 root = tk.Tk()
@@ -218,8 +241,12 @@ exp_low_var = tk.StringVar()
 exp_high_var = tk.StringVar()
 exp_step_var = tk.StringVar()
 exp_unit_var = tk.StringVar(value='A')
+exp_sweep_down_var = tk.IntVar(value=0)  # <-- ADD THIS LINE
 cal_res_var = tk.StringVar()
 status_var = tk.StringVar(value="Ready. Load config or enter values.")
+mag_val_var = tk.StringVar()
+mag_unit_var = tk.StringVar(value='A')
+mag_probe_var = tk.StringVar(value='---')
 
 # --- Tabbed Interface ---
 tab_control = ttk.Notebook(root)
@@ -247,6 +274,8 @@ radio_frame = ttk.Frame(exp_inputs)
 radio_frame.grid(row=3, column=0, columnspan=2, pady=10)
 ttk.Radiobutton(radio_frame, text="A", variable=exp_unit_var, value="A").pack(side=tk.LEFT, padx=5)
 ttk.Radiobutton(radio_frame, text="mT", variable=exp_unit_var, value="mT").pack(side=tk.LEFT, padx=5)
+
+ttk.Checkbutton(exp_inputs, text="Sweep down", variable=exp_sweep_down_var).grid(row=4, column=0, columnspan=2, sticky='w', pady=10)
 
 # Buttons
 ttk.Button(exp_buttons, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)
@@ -277,6 +306,33 @@ ttk.Button(cal_buttons, text="START CAL", command=on_start_cal_click, style='Acc
 ttk.Separator(cal_buttons, orient='horizontal').pack(fill='x', pady=10)
 ttk.Button(cal_buttons, text="ABORT", command=on_abort_click, style='Danger.TButton').pack(fill=tk.X, pady=5)
 
+# Magnet Tab
+tab_mag = ttk.Frame(tab_control, padding=10)
+tab_control.add(tab_mag, text='Magnet')
+
+mag_inputs = ttk.Frame(tab_mag)
+mag_inputs.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
+mag_buttons = ttk.Frame(tab_mag)
+mag_buttons.pack(side=tk.RIGHT, fill=tk.Y)
+
+# Inputs
+ttk.Label(mag_inputs, text="Value:").grid(row=0, column=0, sticky='w', pady=5)
+ttk.Entry(mag_inputs, textvariable=mag_val_var, validate='key', validatecommand=vcmd_float).grid(row=0, column=1, sticky='ew')
+
+mag_radio_frame = ttk.Frame(mag_inputs)
+mag_radio_frame.grid(row=1, column=0, columnspan=2, pady=10)
+ttk.Radiobutton(mag_radio_frame, text="A", variable=mag_unit_var, value="A").pack(side=tk.LEFT, padx=5)
+ttk.Radiobutton(mag_radio_frame, text="mT", variable=mag_unit_var, value="mT").pack(side=tk.LEFT, padx=5)
+
+# Buttons
+ttk.Button(mag_buttons, text="Set Field", command=on_set_magnet_click).pack(fill=tk.X, pady=5)
+ttk.Button(mag_buttons, text="Probe Field", command=on_probe_magnet_click).pack(fill=tk.X, pady=5)
+
+# Uneditable Text Box for Probe Result
+ttk.Entry(mag_buttons, textvariable=mag_probe_var, state='readonly', justify='center').pack(fill=tk.X, pady=5)
+
+ttk.Separator(mag_buttons, orient='horizontal').pack(fill='x', pady=10)
+ttk.Button(mag_buttons, text="Stop Magnet", command=on_stop_magnet_click, style='Danger.TButton').pack(fill=tk.X, pady=5)
 
 # --- Style ---
 style = ttk.Style()
