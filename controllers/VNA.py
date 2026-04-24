@@ -2,6 +2,7 @@ import pyvisa
 import numpy as np
 import os
 from dotenv import load_dotenv
+import warnings
 import time
 
 load_dotenv()
@@ -59,6 +60,31 @@ class VNAController:
         self.close()
 
     # --- public API -----------------------------------------------------------
+    # --- public API -----------------------------------------------------------
+    def set_power(self, power_dbm):
+        """
+        Sets the internal RF source driving power in dBm for Channel 1.
+        """
+        if self.vna is None:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        # SOURce1:POWer sets the base power level
+        self.vna.write(f"SOUR1:POW {power_dbm}")
+        print(f"VNA source power set to {power_dbm} dBm")
+
+        if self.get_power() != power_dbm:
+            warnings.warn(f"Failed to set power to {power_dbm} dBm. Current power: {self.get_power()} dBm")
+
+    def get_power(self):
+        """
+        Queries the current RF source driving power in dBm.
+        """
+        if self.vna is None:
+            raise RuntimeError("Not connected. Call connect() first.")
+        
+        power = self.vna.query("SOUR1:POW?").strip()
+        return float(power)
+
     def read_s11(self): return self._read_sparam("S11", trace_name="MeasS11")
     def read_s12(self): return self._read_sparam("S12", trace_name="MeasS12")
     def read_s21(self): return self._read_sparam("S21", trace_name="MeasS21")
