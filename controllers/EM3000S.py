@@ -125,7 +125,7 @@ class MagnetController:
         dataframe = pd.read_csv('field_calibration_data.csv')
         field_cal = dataframe['Field_mT'].values
         current_cal = dataframe['Current_A'].values
-        coeffs = np.polyfit(field_cal, current_cal, 1) # does curve fitting each time function is called - SLOW
+        coeffs = np.polyfit(field_cal, current_cal, 3) # does curve fitting each time function is called - SLOW
         current_from_field = np.poly1d(coeffs)
         self.set_current(current_from_field(field))
         return field
