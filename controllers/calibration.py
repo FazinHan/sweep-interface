@@ -1,5 +1,6 @@
 from EM3000S import MagnetController
 # from lab_emulator import MagnetController
+from progress import countdown
 import pandas as pd
 import numpy as np
 import configparser
@@ -8,6 +9,7 @@ import time, os
 dir = "data"
 
 CONFIG_FILE = 'params.ini'
+STABILIZE_TIME = 10  # seconds to let the magnet settle before reading the field
 
 if not os.path.exists(CONFIG_FILE):
     raise FileNotFoundError("Error: params.ini not found!")
@@ -36,7 +38,8 @@ print(f"Starting field calibration sweep for {calibration_resolution} points..."
 for idx,curr in enumerate(curr_arr):
     print(f"Setting current to {curr:.2f} A")
     magnet.set_current(curr)
-    time.sleep(2)  # Wait for the magnet to stabilize
+    # Wait for the magnet to stabilize
+    countdown(STABILIZE_TIME, f"  stabilizing {idx+1}/{calibration_resolution}")
     field = magnet.query_field()
     print(f"Measured field: {field:.2f} mT")
     data[idx,0] = curr

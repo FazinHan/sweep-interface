@@ -1,3 +1,4 @@
+#!/bin/python
 import tkinter as tk
 from tkinter import ttk
 import asyncio
@@ -20,7 +21,14 @@ STOP_MAGNET_SCRIPT = os.path.join('controllers', 'stop_magnet.py')
 
 # --- Global State for Async Control ---
 # We need a reference to the current process to kill it later
-current_process = None 
+current_process = None
+# True from the moment a script is scheduled until its coroutine finishes.
+# Set from the GUI thread, cleared from the loop thread, so a fast double-click
+# cannot slip two subprocesses past the guard while the first is still starting.
+running = False
+# Set by the Abort button so the exit code is reported as an abort on every
+# platform (POSIX terminate gives -15, Windows TerminateProcess gives 1).
+abort_requested = False
 # A queue to pass messages from the background thread to the GUI
 msg_queue = queue.Queue()
 # The asyncio loop that will run in a background thread
@@ -34,43 +42,52 @@ def start_background_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
+async def _pump_stream(stream, prefix=""):
+    """Forwards a subprocess pipe to the GUI queue, one line at a time."""
+    async for line in stream:
+        decoded_line = line.decode(errors="replace").strip()
+        if decoded_line:
+            msg_queue.put(("print", f"{prefix}{decoded_line}"))
+
 async def run_script_async(script_name):
     """
-    Async coroutine to run the subprocess. 
+    Async coroutine to run the subprocess.
     It reads output line-by-line and pushes it to the GUI queue.
     """
-    global current_process
-    
+    global current_process, running, abort_requested
+
+    abort_requested = False
     msg_queue.put(("status", f"Running {script_name}..."))
     msg_queue.put(("print", f"Starting subprocess: python {script_name}"))
 
     try:
         # Create the subprocess asynchronously
-        # We use sys.executable to ensure we use the same python interpreter
+        # We use sys.executable to ensure we use the same python interpreter.
+        # -u (plus PYTHONUNBUFFERED for any grandchildren) is what makes the
+        # logs live: a piped stdout is block-buffered by default, so without
+        # it the controller's prints only arrive once the process exits.
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
         current_process = await asyncio.create_subprocess_exec(
-            sys.executable, script_name,
+            sys.executable, "-u", script_name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
 
-        # Read stdout line by line
-        async for line in current_process.stdout:
-            decoded_line = line.decode().strip()
-            if decoded_line:
-                msg_queue.put(("print", decoded_line))
+        # Drain stdout and stderr concurrently. Reading stderr only after the
+        # process exits deadlocks as soon as a controller writes more than a
+        # pipe buffer's worth of warnings (pyvisa is chatty).
+        await asyncio.gather(
+            _pump_stream(current_process.stdout),
+            _pump_stream(current_process.stderr, prefix="stderr: "),
+        )
 
         # Wait for the process to exit
-        await current_process.wait()
-        
-        # Check for errors in stderr
-        stderr_data = await current_process.stderr.read()
-        if stderr_data:
-            msg_queue.put(("print", f"stderr: {stderr_data.decode().strip()}"))
+        rc = await current_process.wait()
 
-        rc = current_process.returncode
         if rc != 0:
-            # -15 usually means terminated by signal (our Abort button)
-            if rc == -15: 
+            if abort_requested:
                 msg_queue.put(("status", "Process Aborted."))
                 msg_queue.put(("print", "--- Process Aborted by User ---"))
             else:
@@ -87,40 +104,85 @@ async def run_script_async(script_name):
         msg_queue.put(("print", f"Unexpected error: {e}"))
     finally:
         current_process = None
+        running = False
 
 def schedule_script(script_name):
     """Helper to schedule the async task from the synchronous GUI."""
-    if current_process is not None:
+    global running
+    if running:
         status_var.set("Error: A process is already running!")
         return
-    
+
+    running = True
     # Schedule the coroutine in the background loop
     asyncio.run_coroutine_threadsafe(run_script_async(script_name), loop)
 
 
 # --- Abort Functionality ---
 
-def on_abort_click():
-    """Kills the running subprocess if it exists."""
-    global current_process
-    if current_process:
+async def abort_and_cleanup():
+    """Terminates the running script, then de-energises the magnet."""
+    global running, abort_requested
+
+    proc = current_process
+    if proc is not None:
+        abort_requested = True
+        msg_queue.put(("status", "Aborting..."))
+        msg_queue.put(("print", "--- Sending terminate signal ---"))
         try:
-            current_process.terminate() # or .kill() if it's stubborn
-            status_var.set("Aborting...")
-            print("Sending terminate signal...")
-            schedule_script(ABORT_SCRIPT)
+            proc.terminate()
         except ProcessLookupError:
-            status_var.set("Process already ended.")
-    else:
+            pass
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            msg_queue.put(("print", "--- Did not exit in 5s, killing ---"))
+            proc.kill()
+
+    # Let the runner coroutine finish its teardown before reusing the slot.
+    while running:
+        await asyncio.sleep(0.05)
+
+    running = True
+    await run_script_async(ABORT_SCRIPT)
+
+def on_abort_click():
+    """Kills the running subprocess, then runs the emergency stop script."""
+    if not running:
         status_var.set("No process is running.")
+        return
+
+    asyncio.run_coroutine_threadsafe(abort_and_cleanup(), loop)
 
 # --- GUI Update Loop ---
+
+# Progress frames arrive as ordinary lines (a bare '\r' from the child would
+# never reach us: the pump reads line-by-line). We do the in-place redraw here.
+PROGRESS_PREFIX = "PROGRESS:"
+_progress_active = False   # last thing written was an animation frame
+_progress_width = 0        # widest frame so far, to erase shorter ones
+
+def _write_progress(frame):
+    global _progress_active, _progress_width
+    _progress_width = max(_progress_width, len(frame))
+    sys.stdout.write("\r" + frame.ljust(_progress_width))
+    sys.stdout.flush()
+    _progress_active = True
+
+def _end_progress():
+    """Close an animated line so the next normal print starts on its own row."""
+    global _progress_active, _progress_width
+    if _progress_active:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        _progress_active = False
+        _progress_width = 0
 
 def check_queue():
     try:
         while True:
             msg_type, content = msg_queue.get_nowait()
-            
+
             if msg_type == "status":
                 status_var.set(content)
             elif msg_type == "print":
@@ -128,13 +190,18 @@ def check_queue():
                 if content.startswith("PROBE_RESULT:"):
                     val = content.split(":")[1].strip()
                     mag_probe_var.set(f"{val} mT")
+                elif content.startswith(PROGRESS_PREFIX):
+                    _write_progress(content[len(PROGRESS_PREFIX):].strip())
                 else:
-                    print(content) 
-                
+                    _end_progress()
+                    # flush explicitly: our own stdout is block-buffered too
+                    # whenever the app is launched with its output redirected.
+                    print(content, flush=True)
+
     except queue.Empty:
         pass
-    
-    root.after(100, check_queue)
+
+    root.after(50, check_queue)
 
 
 # --- Configuration Functions (Unchanged Logic) ---

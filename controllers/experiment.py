@@ -2,6 +2,7 @@ from EM3000S import MagnetController
 from VNA import VNAController
 # from lab_emulator import MagnetController, VNAController
 # from lab_emulator import VNAController
+from progress import countdown
 import numpy as np
 import configparser
 import time, os
@@ -9,6 +10,7 @@ import pandas as pd
 
 dir = "data"
 CONFIG_FILE = 'params.ini'
+STABILIZE_TIME = 10
 
 if not os.path.exists(CONFIG_FILE):
     raise FileNotFoundError("params.ini not found!")
@@ -62,21 +64,21 @@ for curr in currs:
         curr_return = magnet.set_current(curr)
     
     ### EXPERIMENT 1
-    time.sleep(2)  # Wait for the magnet to stabilize
+    countdown(STABILIZE_TIME, "  stabilizing 1/3")  # Wait for the magnet to stabilize
     freq, s11_1 = vna.read_s11()
     _, s12_1 = vna.read_s12()
     _, s21_1 = vna.read_s21()
     _, s22_1 = vna.read_s22()
 
     ### EXPERIMENT 2
-    time.sleep(2)  # Wait for the magnet to stabilize
+    countdown(STABILIZE_TIME, "  stabilizing 2/3")  # Wait for the magnet to stabilize
     freq, s11_2 = vna.read_s11()
     _, s12_2 = vna.read_s12()
     _, s21_2 = vna.read_s21()
     _, s22_2 = vna.read_s22()
 
     ### EXPERIMENT 3
-    time.sleep(2)  # Wait for the magnet to stabilize
+    countdown(STABILIZE_TIME, "  stabilizing 3/3")  # Wait for the magnet to stabilize
     freq, s11_3 = vna.read_s11()
     _, s12_3 = vna.read_s12()
     _, s21_3 = vna.read_s21()
