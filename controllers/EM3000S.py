@@ -13,7 +13,9 @@ class MagnetController:
     
     Protocol: 19200 Baud, 8-N-1, Raw Byte Commands
     """
-    startup_delay_sec = -2.0  # Time to wait 
+    startup_delay_sec = -2.0  # Time to wait
+    max_current = 4.0                                  # |I| limit, Amps
+    calibration_file = 'field_calibration_data.csv'    # this magnet's mT <-> A curve
 
     def _current_map(self,current_amps):
         """Returns the 4-byte value array for a given current in Amps."""
@@ -112,7 +114,7 @@ class MagnetController:
         #     return
 
         # value_bytes = self.CURRENT_MAP[amps]
-        assert abs(amps)<=4.0, "Current out of range for Magnet Controller (-4A to 4A)."
+        assert abs(amps)<=self.max_current, f"Current out of range for Magnet Controller (-{self.max_current}A to {self.max_current}A)."
         value_bytes = self._current_map(amps)
         self._run_start_sequence(value_bytes)
         return amps
@@ -122,7 +124,7 @@ class MagnetController:
         Sets the electromagnet field to a known value in mT based on
         calibration data. Run field_calibration.py to generate.
         """
-        dataframe = pd.read_csv('field_calibration_data.csv')
+        dataframe = pd.read_csv(self.calibration_file)
         field_cal = dataframe['Field_mT'].values
         current_cal = dataframe['Current_A'].values
         coeffs = np.polyfit(field_cal, current_cal, 3) # does curve fitting each time function is called - SLOW

@@ -1,8 +1,13 @@
-from EM3000S import MagnetController
-from VNA import VNAController
+from devices import get_magnet_controller, get_vna_controller
+from progress import countdown
+
+# Drivers come from the Configuration tab's selection ([Devices] in params.ini).
+MagnetController = get_magnet_controller()
+VNAController = get_vna_controller()
+# Uncomment to run without hardware (overrides the selection above):
 # from lab_emulator import MagnetController, VNAController
 # from lab_emulator import VNAController
-from progress import countdown
+
 import numpy as np
 import configparser
 import time, os

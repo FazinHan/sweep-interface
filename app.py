@@ -8,6 +8,12 @@ import configparser
 import os
 import sys
 
+# The controllers are plain scripts, not a package; put their directory on the
+# path the same way the subprocesses get it, so the GUI can read the device
+# registry (stdlib only — drivers themselves are imported lazily, in the child).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'controllers'))
+import devices
+
 # --- Configuration ---
 CONFIG_FILE = 'params.ini'
 DETECT_SCRIPT = os.path.join('controllers', 'detect.py')
@@ -221,6 +227,8 @@ def load_config():
         cal_res_var.set(config.get('Calibration', 'cal_res', fallback='800'))
         mag_val_var.set(config.get('Magnet', 'value', fallback='0'))
         mag_unit_var.set(config.get('Magnet', 'unit', fallback='A'))
+        dev_magnet_var.set(config.get('Devices', 'magnet', fallback=devices.DEFAULT_MAGNET))
+        dev_vna_var.set(config.get('Devices', 'vna', fallback=devices.DEFAULT_VNA))
         status_var.set("Config loaded successfully.")
     except Exception as e:
         status_var.set("Error reading config file.")
@@ -232,6 +240,7 @@ def save_config():
     if 'Experiment' not in config: config['Experiment'] = {}
     if 'Calibration' not in config: config['Calibration'] = {}
     if 'Magnet' not in config: config['Magnet'] = {}
+    if 'Devices' not in config: config['Devices'] = {}
     try:
         config['Experiment']['low'] = exp_low_var.get()
         config['Experiment']['high'] = exp_high_var.get()
@@ -241,6 +250,8 @@ def save_config():
         config['Calibration']['cal_res'] = cal_res_var.get()
         config['Magnet']['value'] = mag_val_var.get()
         config['Magnet']['unit'] = mag_unit_var.get()
+        config['Devices']['magnet'] = dev_magnet_var.get()
+        config['Devices']['vna'] = dev_vna_var.get()
         with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
         # status_var.set("Parameters saved.") # Optional: don't overwrite "Running..." status
@@ -297,6 +308,12 @@ def on_probe_magnet_click():
 def on_stop_magnet_click():
     schedule_script(STOP_MAGNET_SCRIPT)
 
+def on_device_change(event=None):
+    """Persists the device selection immediately: the controllers read it from
+    params.ini when they start, so it must be on disk before the next run."""
+    save_config()
+    status_var.set(f"Devices: {dev_magnet_var.get()} + {dev_vna_var.get()}")
+
 # --- Main Application Setup ---
 
 root = tk.Tk()
@@ -314,6 +331,8 @@ status_var = tk.StringVar(value="Ready. Load config or enter values.")
 mag_val_var = tk.StringVar()
 mag_unit_var = tk.StringVar(value='A')
 mag_probe_var = tk.StringVar(value='---')
+dev_magnet_var = tk.StringVar(value=devices.DEFAULT_MAGNET)
+dev_vna_var = tk.StringVar(value=devices.DEFAULT_VNA)
 
 # --- Tabbed Interface ---
 tab_control = ttk.Notebook(root)
@@ -400,6 +419,36 @@ ttk.Entry(mag_buttons, textvariable=mag_probe_var, state='readonly', justify='ce
 
 ttk.Separator(mag_buttons, orient='horizontal').pack(fill='x', pady=10)
 ttk.Button(mag_buttons, text="Stop Magnet", command=on_stop_magnet_click, style='Danger.TButton').pack(fill=tk.X, pady=5)
+
+# Configuration Tab
+tab_cfg = ttk.Frame(tab_control, padding=10)
+tab_control.add(tab_cfg, text='Configuration')
+
+cfg_inputs = ttk.Frame(tab_cfg)
+cfg_inputs.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
+cfg_buttons = ttk.Frame(tab_cfg)
+cfg_buttons.pack(side=tk.RIGHT, fill=tk.Y)
+
+# Which drivers the controllers should load. The lists come from the registry in
+# controllers/devices.py, so a new driver shows up here without touching the GUI.
+ttk.Label(cfg_inputs, text="Electromagnet:").grid(row=0, column=0, sticky='w', pady=5)
+mag_combo = ttk.Combobox(cfg_inputs, textvariable=dev_magnet_var,
+                         values=list(devices.MAGNETS), state='readonly', width=18)
+mag_combo.grid(row=0, column=1, sticky='ew', padx=(10, 0))
+mag_combo.bind('<<ComboboxSelected>>', on_device_change)
+
+ttk.Label(cfg_inputs, text="VNA:").grid(row=1, column=0, sticky='w', pady=5)
+vna_combo = ttk.Combobox(cfg_inputs, textvariable=dev_vna_var,
+                         values=list(devices.VNAS), state='readonly', width=18)
+vna_combo.grid(row=1, column=1, sticky='ew', padx=(10, 0))
+vna_combo.bind('<<ComboboxSelected>>', on_device_change)
+
+ttk.Label(cfg_inputs, text="Saved to params.ini [Devices]; every controller\n"
+                          "reads it when it starts.",
+          justify='left', foreground='grey').grid(row=2, column=0, columnspan=2,
+                                                  sticky='w', pady=(15, 0))
+
+ttk.Button(cfg_buttons, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)
 
 # --- Style ---
 style = ttk.Style()

@@ -57,6 +57,9 @@ class MagnetController:
     Facilitating a virtual Magnet Controller for development.
     Simulates setting current and stopping.
     """
+    max_current = 4.0
+    calibration_file = 'field_calibration_data.csv'
+
     def __init__(self, resource_name=None):
         self.inst = None
         self.rm = None

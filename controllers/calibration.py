@@ -1,4 +1,5 @@
-from EM3000S import MagnetController
+from devices import get_magnet_controller
+MagnetController = get_magnet_controller()   # selected in the Configuration tab
 # from lab_emulator import MagnetController
 from progress import countdown
 import pandas as pd
@@ -29,7 +30,9 @@ print("Connecting to Magnet Controller...")
 magnet = MagnetController()
 magnet.connect()
 
-curr_arr = np.linspace(-4,4,calibration_resolution)
+# Sweep the selected magnet's full range, into the file that magnet reads back
+# in set_field(). Each magnet keeps its own curve.
+curr_arr = np.linspace(-magnet.max_current, magnet.max_current, calibration_resolution)
 
 data = np.zeros((calibration_resolution,2))
 
@@ -45,12 +48,12 @@ for idx,curr in enumerate(curr_arr):
     data[idx,0] = curr
     data[idx,1] = field
 
-# os.rename(os.path.join('field_calibration_data.csv'), os.path.join('field_calibration_data.csv.bak')) if os.path.exists(os.path.join('field_calibration_data.csv')) else None
+# os.rename(magnet.calibration_file, magnet.calibration_file + '.bak') if os.path.exists(magnet.calibration_file) else None
 
 df = pd.DataFrame(data, columns=['Current_A', 'Field_mT'])
-df.to_csv(os.path.join( 'field_calibration_data.csv'), index=False)
+df.to_csv(magnet.calibration_file, index=False)
 
 magnet.stop_and_query_field()
 magnet.disconnect()
 
-print("Field calibrated and data saved to 'field_calibration_data.csv'.")
+print(f"Field calibrated and data saved to '{magnet.calibration_file}'.")
