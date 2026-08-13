@@ -88,6 +88,12 @@ Per-magnet differences that logic scripts rely on are class attributes: `max_cur
 (the |I| limit, and the span `calibration.py` sweeps) and `calibration_file` (that
 magnet's own mT ↔ A curve, read back by `set_field()`).
 
+The module also serves rig-wide settings from `[Settings]`. `stabilize_time()` returns
+the seconds to wait for the equipment to settle before each VNA read; `experiment.py`
+and `calibration.py` take their `STABILIZE_TIME` from it. Blank or malformed values log
+a line and fall back to `DEFAULT_STABILIZE_TIME` (10 s) rather than killing a sweep
+that is already underway.
+
 ### Logic Scripts
 
 * **`detect.py`**:
@@ -99,7 +105,7 @@ magnet's own mT ↔ A curve, read back by `set_field()`).
 * **`experiment.py`**:
 * The main run loop.
 * Reads `params.ini` for start/stop/step values.
-* Iterates through current steps  Sets Magnet  Waits 2s  Averages 3 VNA sweeps  Saves CSV.
+* Iterates through current steps  Sets Magnet  Waits `stabilize_time`  Averages 3 VNA sweeps  Saves CSV.
 
 
 * **`calibration.py`**:
@@ -139,6 +145,9 @@ unit = mT       ; 'A' or 'mT'
 [Devices]
 magnet = EM3000S  ; Key in devices.MAGNETS - written by the Configuration tab
 vna = ZNLE        ; Key in devices.VNAS
+
+[Settings]
+stabilize_time = 10  ; Seconds to settle before each VNA read
 
 ```
 
@@ -184,7 +193,8 @@ The `app.py` script is the orchestrator. It uses a **Threaded Asyncio** model to
 
 4. **Configuration Tab**:
 * Two read-only comboboxes populated from `devices.MAGNETS` / `devices.VNAS`.
-* Selecting writes `[Devices]` to `params.ini` immediately (`on_device_change`), because the controllers only read it at process start.
+* An integer-only **Stabilisation time (s)** box, with a `?` badge whose hover text explains it (`Tooltip` — a borderless `Toplevel`, since ttk has none).
+* Both write to `params.ini` as soon as they change (`on_device_change`, `on_stabilize_change` on `<FocusOut>`/`<Return>`), because the controllers only read the file at process start. A blank settle box is reset to the default rather than saved empty.
 * `app.py` imports `devices` directly by putting `controllers/` on `sys.path`; the module is stdlib-only and imports drivers lazily, so the GUI never pulls in `pyvisa`.
 
 

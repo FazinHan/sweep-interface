@@ -1,4 +1,4 @@
-from devices import get_magnet_controller, get_vna_controller
+from devices import get_magnet_controller, get_vna_controller, stabilize_time
 from progress import countdown
 
 # Drivers come from the Configuration tab's selection ([Devices] in params.ini).
@@ -15,7 +15,7 @@ import pandas as pd
 
 dir = "data"
 CONFIG_FILE = 'params.ini'
-STABILIZE_TIME = 10
+STABILIZE_TIME = stabilize_time()  # set in the Configuration tab
 
 if not os.path.exists(CONFIG_FILE):
     raise FileNotFoundError("params.ini not found!")

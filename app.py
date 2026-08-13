@@ -229,6 +229,8 @@ def load_config():
         mag_unit_var.set(config.get('Magnet', 'unit', fallback='A'))
         dev_magnet_var.set(config.get('Devices', 'magnet', fallback=devices.DEFAULT_MAGNET))
         dev_vna_var.set(config.get('Devices', 'vna', fallback=devices.DEFAULT_VNA))
+        stabilize_var.set(config.get('Settings', 'stabilize_time',
+                                     fallback=str(devices.DEFAULT_STABILIZE_TIME)))
         status_var.set("Config loaded successfully.")
     except Exception as e:
         status_var.set("Error reading config file.")
@@ -241,6 +243,7 @@ def save_config():
     if 'Calibration' not in config: config['Calibration'] = {}
     if 'Magnet' not in config: config['Magnet'] = {}
     if 'Devices' not in config: config['Devices'] = {}
+    if 'Settings' not in config: config['Settings'] = {}
     try:
         config['Experiment']['low'] = exp_low_var.get()
         config['Experiment']['high'] = exp_high_var.get()
@@ -252,6 +255,8 @@ def save_config():
         config['Magnet']['unit'] = mag_unit_var.get()
         config['Devices']['magnet'] = dev_magnet_var.get()
         config['Devices']['vna'] = dev_vna_var.get()
+        # An empty box must not reach the controllers as int('').
+        config['Settings']['stabilize_time'] = stabilize_var.get() or str(devices.DEFAULT_STABILIZE_TIME)
         with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
         # status_var.set("Parameters saved.") # Optional: don't overwrite "Running..." status
@@ -294,6 +299,10 @@ def _validate_float(new_value):
     except ValueError:
         return False
 
+def _validate_int(new_value):
+    """Whole seconds only; empty is allowed while the box is being edited."""
+    return new_value == "" or new_value.isdigit()
+
 def on_set_magnet_click():
     if not mag_val_var.get():
         status_var.set("Error: Magnet value must be filled.")
@@ -314,12 +323,72 @@ def on_device_change(event=None):
     save_config()
     status_var.set(f"Devices: {dev_magnet_var.get()} + {dev_vna_var.get()}")
 
+def on_stabilize_change(event=None):
+    """Same deal for the settle time — write it out as soon as the box loses
+    focus, so it is on disk whether or not a run is started from this tab."""
+    if not stabilize_var.get():
+        stabilize_var.set(str(devices.DEFAULT_STABILIZE_TIME))
+    save_config()
+    status_var.set(f"Stabilisation time: {stabilize_var.get()} s")
+
+# --- Hover Help ---
+
+class Tooltip:
+    """
+    Hover text for a widget. ttk has no tooltip, so this is a bare borderless
+    Toplevel put next to the widget on <Enter> and destroyed on <Leave>.
+    """
+    def __init__(self, widget, text, delay_ms=350, wraplength=340):
+        self.widget = widget
+        self.text = text
+        self.delay_ms = delay_ms
+        self.wraplength = wraplength
+        self._after_id = None
+        self._window = None
+        widget.bind('<Enter>', self._schedule, add='+')
+        widget.bind('<Leave>', self.hide, add='+')
+        widget.bind('<ButtonPress>', self._show_now, add='+')
+
+    def _schedule(self, event=None):
+        self._unschedule()
+        self._after_id = self.widget.after(self.delay_ms, self.show)
+
+    def _unschedule(self):
+        if self._after_id is not None:
+            self.widget.after_cancel(self._after_id)
+            self._after_id = None
+
+    def _show_now(self, event=None):
+        """Clicking the hint button shows it without waiting out the delay."""
+        self._unschedule()
+        self.show()
+
+    def show(self):
+        if self._window is not None:
+            return
+        x = self.widget.winfo_rootx() + self.widget.winfo_width() + 8
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self._window = tk.Toplevel(self.widget)
+        self._window.wm_overrideredirect(True)
+        self._window.wm_geometry(f"+{x}+{y}")
+        tk.Label(self._window, text=self.text, justify=tk.LEFT,
+                 wraplength=self.wraplength, background="#ffffe0",
+                 foreground="black", relief=tk.SOLID, borderwidth=1,
+                 padx=6, pady=4).pack()
+
+    def hide(self, event=None):
+        self._unschedule()
+        if self._window is not None:
+            self._window.destroy()
+            self._window = None
+
 # --- Main Application Setup ---
 
 root = tk.Tk()
 root.title("Instrument Controller")
 
 vcmd_float = (root.register(_validate_float), '%P')
+vcmd_int = (root.register(_validate_int), '%P')
 
 exp_low_var = tk.StringVar()
 exp_high_var = tk.StringVar()
@@ -333,6 +402,7 @@ mag_unit_var = tk.StringVar(value='A')
 mag_probe_var = tk.StringVar(value='---')
 dev_magnet_var = tk.StringVar(value=devices.DEFAULT_MAGNET)
 dev_vna_var = tk.StringVar(value=devices.DEFAULT_VNA)
+stabilize_var = tk.StringVar(value=str(devices.DEFAULT_STABILIZE_TIME))
 
 # --- Tabbed Interface ---
 tab_control = ttk.Notebook(root)
@@ -443,9 +513,26 @@ vna_combo = ttk.Combobox(cfg_inputs, textvariable=dev_vna_var,
 vna_combo.grid(row=1, column=1, sticky='ew', padx=(10, 0))
 vna_combo.bind('<<ComboboxSelected>>', on_device_change)
 
-ttk.Label(cfg_inputs, text="Saved to params.ini [Devices]; every controller\n"
+ttk.Label(cfg_inputs, text="Stabilisation time (s):").grid(row=2, column=0, sticky='w', pady=5)
+stabilize_entry = ttk.Entry(cfg_inputs, textvariable=stabilize_var, width=18,
+                            validate='key', validatecommand=vcmd_int)
+stabilize_entry.grid(row=2, column=1, sticky='ew', padx=(10, 0))
+stabilize_entry.bind('<FocusOut>', on_stabilize_change)
+stabilize_entry.bind('<Return>', on_stabilize_change)
+
+# Hover help for the setting above.
+stabilize_hint = ttk.Label(cfg_inputs, text=" ? ", relief='raised',
+                           foreground='blue', cursor='question_arrow')
+stabilize_hint.grid(row=2, column=2, sticky='w', padx=(6, 0))
+Tooltip(stabilize_hint,
+        "This setting is the time the system waits for the equipment to "
+        "stabilise between successive readings for the same parameters of "
+        "the experiment, which readings are then averaged to eliminate "
+        "static noise.")
+
+ttk.Label(cfg_inputs, text="Saved to params.ini; every controller\n"
                           "reads it when it starts.",
-          justify='left', foreground='grey').grid(row=2, column=0, columnspan=2,
+          justify='left', foreground='grey').grid(row=3, column=0, columnspan=3,
                                                   sticky='w', pady=(15, 0))
 
 ttk.Button(cfg_buttons, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)

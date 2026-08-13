@@ -1,4 +1,4 @@
-from devices import get_magnet_controller
+from devices import get_magnet_controller, stabilize_time
 MagnetController = get_magnet_controller()   # selected in the Configuration tab
 # from lab_emulator import MagnetController
 from progress import countdown
@@ -10,7 +10,7 @@ import time, os
 dir = "data"
 
 CONFIG_FILE = 'params.ini'
-STABILIZE_TIME = 10  # seconds to let the magnet settle before reading the field
+STABILIZE_TIME = stabilize_time()  # settle time before reading, Configuration tab
 
 if not os.path.exists(CONFIG_FILE):
     raise FileNotFoundError("Error: params.ini not found!")

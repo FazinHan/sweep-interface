@@ -28,6 +28,10 @@ Pick your hardware in the **Configuration** tab first: one dropdown for the elec
 one for the VNA. The choice is written to `params.ini` under `[Devices]` and every
 controller reads it when it starts, so nothing else needs editing to change magnet.
 
+The same tab holds the **stabilisation time** (whole seconds) — how long the rig is left
+to settle before each VNA read. Every routine that reads the VNA uses it, both the
+experiment sweep and the calibration sweep. Hover the `?` beside it for what it does.
+
 ### Bringing up the HO-EM7000S
 `controllers/EM7000S.py` mirrors the EM3000S driver, but the EM7000S command set has not
 been reverse-engineered yet. Every byte, the link settings, the current limit and the
@@ -40,7 +44,7 @@ Each magnet keeps its own field calibration file (`calibration_file` on the driv
 class), so calibrating one never overwrites the other's curve.
 
 ### Data Output
-All data is saved in `\data`. `experiment.py` polls the VNA for its data three times, separated by two seconds. What is saved in the final data file is the mean of the three measurements.
+All data is saved in `\data`. `experiment.py` polls the VNA for its data three times, separated by the stabilisation time set in the Configuration tab. What is saved in the final data file is the mean of the three measurements.
 
 ### Issues
 Magnetic field sweep will be restricted by the calibration resolution due to the lookup function, current sweep does not suffer from this.
