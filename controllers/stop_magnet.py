@@ -1,4 +1,5 @@
-from EM3000S import MagnetController
+from devices import get_magnet_controller
+MagnetController = get_magnet_controller()   # selected in the Configuration tab
 # from lab_emulator import MagnetController
 
 magnet = MagnetController()

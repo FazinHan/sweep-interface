@@ -1,8 +1,14 @@
-from EM3000S import MagnetController
-from VNA import VNAController
+from devices import (get_magnet_controller, get_vna_controller,
+                     require_field_support, stabilize_time)
+from progress import countdown
+
+# Drivers come from the Configuration tab's selection ([Devices] in params.ini).
+MagnetController = get_magnet_controller()
+VNAController = get_vna_controller()
+# Uncomment to run without hardware (overrides the selection above):
 # from lab_emulator import MagnetController, VNAController
 # from lab_emulator import VNAController
-from progress import countdown
+
 import numpy as np
 import configparser
 import time, os
@@ -10,7 +16,7 @@ import pandas as pd
 
 dir = "data"
 CONFIG_FILE = 'params.ini'
-STABILIZE_TIME = 10
+STABILIZE_TIME = stabilize_time()  # set in the Configuration tab
 
 if not os.path.exists(CONFIG_FILE):
     raise FileNotFoundError("params.ini not found!")
@@ -29,6 +35,9 @@ try:
     print("Config loaded successfully.")
 except Exception as e:
     raise ValueError("Error reading config file.")
+
+# Fail before creating a run directory or touching the magnet.
+require_field_support(UNIT)
 
 pathname = os.path.join(dir, f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}{'_DOWN' if DOWN else ''}")
 
@@ -54,7 +63,6 @@ print("Sweeping...")
 currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
 if DOWN:
     currs = currs[::-1]  # Reverse the array if sweeping down
-s_param_magnitudes = {'s11': [], 's12': [], 's21': [], 's22': []}
 
 for curr in currs:
     print(f"Setting field to {curr:.2f} {UNIT}...")
@@ -116,6 +124,7 @@ print("Stopping magnet...")
 magnet.stop_and_query_field()
 
 magnet.disconnect()
+vna.close()
 
 print("Data saved.\n")
 

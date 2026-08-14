@@ -1,4 +1,5 @@
-from EM3000S import MagnetController
+from devices import get_magnet_controller, require_field_support
+MagnetController = get_magnet_controller()   # selected in the Configuration tab
 # from lab_emulator import MagnetController
 import configparser
 import os
@@ -16,6 +17,9 @@ try:
     unit = config.get('Magnet', 'unit')
 except Exception as e:
     raise ValueError(f"Error reading config: {e}")
+
+# Fail before the magnet is even opened.
+require_field_support(unit)
 
 magnet = MagnetController()
 magnet.connect()
