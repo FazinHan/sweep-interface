@@ -1,35 +1,80 @@
 import pyvisa
 import time, os
 import numpy as np
-import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # =============================================================================
-# CONTROL SIGNALS  --  NOT YET VERIFIED AGAINST REAL HARDWARE
+# CONTROL SIGNALS  --  captured from the vendor application, 2026-08-14
 # =============================================================================
-# The EM3000S command set was never published: it was recovered by capturing
-# the vendor's Windows application talking to the magnet over the USB-serial
-# link, then replaying the byte sequences. The EM7000S has to be captured the
-# same way, so every value that a capture will tell us lives in this one block
-# instead of being scattered through the methods below.
+# The EM7000S command set was recovered the same way as the EM3000S's: USBPcap
+# captures of the vendor's Windows software driving the magnet over its FTDI
+# USB-serial link (VID 0403, PID 6015). Two captures:
 #
-# The placeholders are the EM3000S values (same vendor, same family, so they
-# are the best first guess), NOT measurements of an EM7000S. Until a capture
-# confirms them, connect() refuses to open the port.
+#   #1: one coil;  set +1.00, +2.00, +0.50, -1.00 A
+#   #2: coil dialog exercised 1-4, then at four coils set +3.00 A / STOP,
+#       +0.25 A / STOP, -3.00 A / STOP, then at one coil +1.00 A / STOP
 #
-# To bring this driver up:
-#   1. capture the vendor app driving an EM7000S,
-#   2. correct the constants below,
-#   3. re-fit CURRENT_FIT_COEFFS from a current sweep (see calibration.py),
-#   4. set SIGNALS_VERIFIED = True.
+# THE PROTOCOL (differs from the EM3000S in almost every constant):
+#
+#   * Reply rule: a command byte is answered with exactly twice its value
+#     (0x64 -> 0xC8, 0x1E -> 0x3C, ...). A data byte is echoed back unchanged.
+#     The fixed 0x12 ACK of the EM3000S does not exist here. Two exceptions:
+#     COMMIT answers 0x19, and STOP is echoed (0x27 -> 0x27) rather than
+#     doubled.
+#
+#   * The magnet has four independently driven coils. There is NO standalone
+#     "coil count" message -- changing it in the vendor app's dialog produces
+#     no traffic at all. The count is expressed by shape: each set sequence
+#     enables and writes one channel per energised coil.
+#
+#   * A set sequence, for N coils energised at the same current:
+#         READY
+#         ENABLE_COIL_BASE + n          for n in 0..N-1
+#         CHANNEL_BASE + n, <5 bytes>   for n in 0..N-1
+#         COMMIT                        (-> 0x19)
+#     Observed verbatim for N=1 and N=4; N=2 and N=3 are the obvious
+#     interpolation but were NOT captured (a warning is printed when used).
+#
+#   * Payload per channel: [value high, value low, 0x00, sign, 0x00],
+#     sign 0x01 positive / 0x00 negative. +1.00 A and -1.00 A produced the
+#     identical magnitude with only the sign byte differing.
+#
+#   * STOP is the single byte 0x27, echoed back. Pressed four times across the
+#     captures, from +3 A, +0.25 A, -3 A and +1 A states: always just 0x27.
+#     (0x2B, the EM3000S stop, is this magnet's coil-4 value channel. The two
+#     drivers must never share these constants.)
+#
+#   * While energised, the vendor app polls 0x2D / 0x2E / 0x38 in a loop and
+#     gets short data bursts back -- live readouts of some kind. Their meaning
+#     is not established and nothing here needs them.
+#
+#   * The vendor app rejects settings outside +/-4.2 A in a dialog, so the
+#     limit never reaches the wire; 4.2 A is taken from that dialog.
+#
+# FIELD READING: none. The 0x0A "query" of the EM3000S is this magnet's COMMIT
+# byte, no field-query opcode has been observed, and this unit's gaussmeter is
+# broken anyway. Everything field-related returns None or raises; the magnet
+# is Amps-only (devices.MAGNETS marks it supports_field=False).
+#
+# CURRENT ENCODE: the five captured (amps -> counts) pairs are used directly,
+# with piecewise-linear interpolation between them and edge-slope extrapolation
+# beyond -- so a captured current reproduces the vendor app's bytes exactly,
+# and nothing is smoothed away by a fitted curve (a cubic fit missed the
+# captured points by up to 15 counts). Caveats: 0.25 and 3.00 A were captured
+# with four coils energised, the rest with one, so a small coil-count
+# dependence cannot be ruled out (+1.00 A at one coil gave identical bytes in
+# both captures); above 3.00 A the mapping is extrapolation. ~2735 counts per
+# amp, against the EM3000S's ~250 -- one more reason never to mix the two
+# drivers' constants.
 # =============================================================================
 
-#: Flip to True once the block below has been confirmed on a real EM7000S.
-SIGNALS_VERIFIED = False
+#: The control block above was captured from a real EM7000S; sequences for
+#: 2 and 3 coils are inferred (see warning in _run_start_sequence).
+SIGNALS_VERIFIED = True
 
-# --- Link settings -----------------------------------------------------------
+# --- Link settings (confirmed by FTDI control transfers in both captures) ----
 BAUD_RATE = 19200
 DATA_BITS = 8
 PARITY = pyvisa.constants.Parity.none
@@ -37,84 +82,126 @@ STOP_BITS = pyvisa.constants.StopBits.one
 TIMEOUT_MS = 2000
 
 # --- Opcodes -----------------------------------------------------------------
-CMD_READY = 0x64        # "are you there" ping; device answers with one byte
-CMD_START = 0x1E        # begin a set sequence; poll until ACK comes back
-CMD_SET_VALUE = 0x2C    # "the value payload follows"
-CMD_END_SET = 0x00      # terminate the set sequence; poll for ACK
-CMD_STOP = 0x2B         # stop / de-energise; poll for ACK
-CMD_QUERY_FIELD = 0x0A  # query gaussmeter; 3 bytes come back, each echoed
-CMD_STOP_TAIL = (0x4E, 0x00)  # tail of the stop sequence; only the first replies
-CMD_END = 0x82          # close the stop sequence; poll for ACK
-ACK = 0x12              # the byte every polled step waits for
+CMD_READY = 0x64             # -> 0xC8
+ENABLE_COIL_BASE = 0x1E      # +n for coil n: 0x1E..0x21, each -> doubled
+CHANNEL_BASE = 0x28          # +n for coil n: 0x28..0x2B, each -> doubled
+CMD_COMMIT = 0x0A            # -> 0x19 (exception to the doubling rule)
+COMMIT_REPLY = 0x19
+CMD_STOP = 0x27              # -> echoed 0x27 (exception: not doubled)
 
 # --- Value payload -----------------------------------------------------------
-# Sent as [high byte, low byte, VALUE_PAD, sign flag].
+# [high, low, VALUE_PAD, sign, VALUE_TAIL], each byte echoed by the device.
 VALUE_PAD = 0x00
+VALUE_TAIL = 0x00
 SIGN_POSITIVE = 1
 SIGN_NEGATIVE = 0
 
-# --- Field decode ------------------------------------------------------------
-# field_mT = ((b1 << 8) | b2) / FIELD_SCALE, negated when b3 == FIELD_SIGN_NEGATIVE
-FIELD_SCALE = 10.0
-FIELD_SIGN_NEGATIVE = 0x01
-
 # --- Current encode ----------------------------------------------------------
-# Amps -> device integer, cubic, highest power first (np.polyval order).
-CURRENT_FIT_COEFFS = (4.76264, 2.00444, 252.08648, -8.46937)
+# Every (amps -> counts) pair ever captured from the vendor app, ascending.
+# _counts_for_amps interpolates between them; see header for caveats.
+CURRENT_COUNTS_TABLE = (
+    (0.25, 555),     # capture #2, four coils
+    (0.50, 1198),    # capture #1, one coil
+    (1.00, 2570),    # captures #1 and #2, one coil, identical both times
+    (2.00, 5301),    # capture #1, one coil
+    (3.00, 8061),    # capture #2, four coils
+)
 
-# --- Ranges and timing -------------------------------------------------------
-MAX_CURRENT_A = 4.0            # the EM7000S almost certainly differs; measure it
-STARTUP_DELAY_SEC = -2.0       # slack subtracted from pulse() hold times
-CALIBRATION_FILE = 'field_calibration_data_em7000s.csv'  # written by calibration.py
+# --- Ranges ------------------------------------------------------------------
+MAX_CURRENT_A = 4.2          # the vendor app's own dialog: "between -4.2 and
+                             # 4.2A". Note 3.0 A is the largest captured value,
+                             # so the fit extrapolates above it.
+CALIBRATION_FILE = 'field_calibration_data_em7000s.csv'  # unused until the
+                             # gaussmeter works and a calibration exists
 
 # =============================================================================
+
+
+def _counts_for_amps(amps):
+    """
+    Device counts for a current magnitude, from CURRENT_COUNTS_TABLE.
+
+    Piecewise-linear through the captured points (so a captured current
+    reproduces the vendor app's bytes exactly); beyond either end, the edge
+    segment's slope is extended, clamped at zero counts.
+    """
+    knots_a = np.array([p[0] for p in CURRENT_COUNTS_TABLE])
+    knots_c = np.array([p[1] for p in CURRENT_COUNTS_TABLE])
+    if amps <= knots_a[0]:
+        slope = (knots_c[1] - knots_c[0]) / (knots_a[1] - knots_a[0])
+        counts = knots_c[0] + slope * (amps - knots_a[0])
+    elif amps >= knots_a[-1]:
+        slope = (knots_c[-1] - knots_c[-2]) / (knots_a[-1] - knots_a[-2])
+        counts = knots_c[-1] + slope * (amps - knots_a[-1])
+    else:
+        counts = np.interp(amps, knots_a, knots_c)
+    return max(int(round(counts)), 0)
+
+
+def expected_reply(command):
+    """
+    What the device answers a command byte with: twice the byte, except the
+    two documented exceptions (COMMIT -> 0x19, STOP -> echoed).
+    """
+    if command == CMD_COMMIT:
+        return COMMIT_REPLY
+    if command == CMD_STOP:
+        return CMD_STOP
+    return (command * 2) & 0xFF
 
 
 class MagnetController:
     """
     A PyVISA-based controller for the Holmarc HO-EM7000S electromagnet.
 
-    Same public API as EM3000S.MagnetController — connect/disconnect,
-    set_current/set_field, query_field/stop_and_query_field, pulse — so the
+    Same public API as EM3000S.MagnetController -- connect/disconnect,
+    set_current/set_field, query_field/stop_and_query_field, pulse -- so the
     controllers in this directory can drive either magnet without caring which
-    one is plugged in. Everything device-specific comes from the control-signal
-    block at the top of this file.
+    one is plugged in. This magnet is Amps-only: set_field raises, and the
+    field queries return None (no gaussmeter; see header).
 
-    Protocol: 19200 Baud, 8-N-1, Raw Byte Commands (provisional).
+    The number of energised coils (1-4) comes from params.ini [EM7000S] via
+    devices.em7000s_coils(), settable in the GUI's Configuration tab.
+
+    Protocol: 19200 Baud, 8-N-1, raw bytes; captured 2026-08-14.
     """
-    startup_delay_sec = STARTUP_DELAY_SEC
     max_current = MAX_CURRENT_A
     calibration_file = CALIBRATION_FILE
 
-    def _current_map(self, current_amps):
-        """Returns the 4-byte value array for a given current in Amps."""
-        pos = SIGN_POSITIVE            # sign flag rides in the last payload byte
-        if current_amps < 0:
-            current_amps = abs(current_amps)
-            pos = SIGN_NEGATIVE
-        mapped = int(np.polyval(CURRENT_FIT_COEFFS, current_amps))
-        print(f"  mapped {current_amps:.3f} A -> {mapped}")
-        # Split into high/low bytes directly. EM3000S does this by slicing the
-        # hex string, which silently yields 0 for values below 0x10.
-        high, low = divmod(max(mapped, 0), 0x100)
-        return [high & 0xFF, low, VALUE_PAD, pos]
-
-    def __init__(self, resource_name=os.getenv("EM_ID")):
+    def __init__(self, resource_name=os.getenv("EM_ID"), coils=None):
         self.resource_name = resource_name
         self.baud_rate = BAUD_RATE
         self.inst = None
         self.rm = pyvisa.ResourceManager()
+        # Rig configuration, not a run parameter: read from params.ini unless
+        # the caller overrides. Imported lazily so the driver stays runnable
+        # standalone without dragging the registry in at module load.
+        if coils is None:
+            from devices import em7000s_coils
+            coils = em7000s_coils()
+        from devices import EM7000S_COILS_MIN, EM7000S_COILS_MAX
+        if not EM7000S_COILS_MIN <= int(coils) <= EM7000S_COILS_MAX:
+            raise ValueError(
+                f"EM7000S coils must be {EM7000S_COILS_MIN}-"
+                f"{EM7000S_COILS_MAX}, got {coils}."
+            )
+        self.coils = int(coils)
 
+    # --- lifecycle -----------------------------------------------------------
     def connect(self):
         """Initializes and configures the serial connection."""
         if not SIGNALS_VERIFIED:
             raise RuntimeError(
-                "EM7000S control signals have not been verified yet. The opcodes "
-                "at the top of controllers/EM7000S.py are EM3000S placeholders; "
-                "capture the vendor application driving an EM7000S, correct them, "
-                "then set SIGNALS_VERIFIED = True."
+                "EM7000S control signals are marked unverified; refusing to "
+                "open the port. See the header of controllers/EM7000S.py."
             )
-        print(f"Connecting to {self.resource_name} at {self.baud_rate} baud...")
+        if not self.resource_name or self.resource_name == "None":
+            raise RuntimeError(
+                "No magnet address: EM_ID is unset in controllers/.env. "
+                "Run 'Detect Insts!' with the magnet powered and plugged in."
+            )
+        print(f"Connecting to {self.resource_name} at {self.baud_rate} baud "
+              f"({self.coils} coil(s) energised)...")
         self.inst = self.rm.open_resource(self.resource_name)
         self.inst.baud_rate = self.baud_rate
         self.inst.data_bits = DATA_BITS
@@ -134,181 +221,128 @@ class MagnetController:
         self.rm.close()
         print("Resource manager closed.")
 
-    def _write(self, byte):
-        """Sends one raw byte."""
-        self.inst.write_raw(bytes([byte]))
-
+    # --- byte primitives -----------------------------------------------------
     def _read_one_byte(self):
-        """Reads a single byte, returns int or None."""
+        """Reads a single byte, returns int or None on timeout."""
         try:
             return self.inst.read_bytes(1)[0]
         except pyvisa.errors.VisaIOError:
             return None
 
-    def _poll_for_byte(self, expected_byte):
-        """Keeps reading until a specific byte is found or timeout."""
-        try:
-            while True:
-                response = self.inst.read_bytes(1)[0]
-                if response == expected_byte:
-                    return response
-        except pyvisa.errors.VisaIOError:
-            return None
+    def _exchange(self, byte, expect):
+        """
+        Sends one byte and reads the one-byte reply, checking it against the
+        protocol. A mismatch is loud but not fatal: mid-sequence the safest
+        continuation is to finish the sequence, not to leave the device
+        half-programmed.
+        """
+        self.inst.write_raw(bytes([byte]))
+        reply = self._read_one_byte()
+        if reply != expect:
+            got = "timeout" if reply is None else f"0x{reply:02X}"
+            print(f"  WARNING: sent 0x{byte:02X}, expected 0x{expect:02X}, "
+                  f"got {got}")
+        return reply
+
+    def _command(self, opcode):
+        return self._exchange(opcode, expected_reply(opcode))
+
+    def _data(self, byte):
+        return self._exchange(byte, byte)   # data bytes are echoed
+
+    # --- protocol ------------------------------------------------------------
+    def _current_map(self, current_amps):
+        """Returns the 5-byte per-channel payload for a current in Amps."""
+        sign = SIGN_POSITIVE
+        if current_amps < 0:
+            current_amps = abs(current_amps)
+            sign = SIGN_NEGATIVE
+        counts = _counts_for_amps(current_amps)
+        print(f"  mapped {current_amps:.3f} A -> {counts} counts")
+        high, low = divmod(counts, 0x100)
+        return [high & 0xFF, low, VALUE_PAD, sign, VALUE_TAIL]
 
     def _run_start_sequence(self, value_bytes):
-        """Sends the full 10-step START sequence."""
-        print(f"  Sending START sequence: {[f'0x{b:02X}' for b in value_bytes]}")
+        """
+        Runs one full set sequence: READY, an enable per energised coil, the
+        payload written to each coil's channel, COMMIT.
+        """
+        if self.coils in (2, 3):
+            print(f"  WARNING: the {self.coils}-coil sequence is inferred "
+                  f"from the 1- and 4-coil captures, not itself captured. "
+                  f"Verify the magnet behaves before trusting a run.")
+        print(f"  Sending SET sequence to {self.coils} coil(s): "
+              f"{[f'0x{b:02X}' for b in value_bytes]}")
 
-        self._write(CMD_READY); self._read_one_byte()      # 1. Ready
-        self._write(CMD_READY); self._read_one_byte()      # 2. Ready
-        self._write(CMD_START); self._poll_for_byte(ACK)   # 3. Start
-        self._write(CMD_READY); self._read_one_byte()      # 4. Ready
-        self._write(CMD_SET_VALUE); self._read_one_byte()  # 5. Set Value
+        self._command(CMD_READY)
+        for n in range(self.coils):
+            self._command(ENABLE_COIL_BASE + n)
+        for n in range(self.coils):
+            self._command(CHANNEL_BASE + n)
+            for value_byte in value_bytes:
+                self._data(value_byte)
+        self._command(CMD_COMMIT)
+        print("  SET sequence complete.")
 
-        # Steps 6-9: Send the 4-byte value
-        for value_byte in value_bytes:
-            self._write(value_byte); self._read_one_byte()
-
-        # Step 10: End Command
-        self._write(CMD_END_SET); self._poll_for_byte(ACK)
-        print("  START sequence complete.")
-
+    # --- public API ----------------------------------------------------------
     def set_current(self, amps):
-        """
-        Sets the electromagnet current to a known value.
-        """
+        """Sets every energised coil to the given current."""
         assert abs(amps) <= self.max_current, (
             f"Current out of range for Magnet Controller "
             f"(-{self.max_current}A to {self.max_current}A)."
         )
-        value_bytes = self._current_map(amps)
-        self._run_start_sequence(value_bytes)
+        self._run_start_sequence(self._current_map(amps))
         return amps
 
     def set_field(self, field):
         """
-        Sets the electromagnet field to a known value in mT based on
-        calibration data. Run calibration.py against this magnet to generate.
+        Not available on this magnet: no working gaussmeter, so no calibration
+        can exist to convert mT to Amps. devices.MAGNETS marks it
+        supports_field=False, which is what hides mT in the GUI; this is the
+        backstop for anything calling the driver directly.
         """
-        if not os.path.exists(self.calibration_file):
-            raise FileNotFoundError(
-                f"{self.calibration_file} not found — run a calibration with the "
-                f"EM7000S selected before sweeping in mT."
-            )
-        dataframe = pd.read_csv(self.calibration_file)
-        field_cal = dataframe['Field_mT'].values
-        current_cal = dataframe['Current_A'].values
-        coeffs = np.polyfit(field_cal, current_cal, 3)  # re-fits on every call - SLOW
-        current_from_field = np.poly1d(coeffs)
-        self.set_current(current_from_field(field))
-        return field
+        raise NotImplementedError(
+            "The EM7000S cannot be commanded in mT: its gaussmeter is broken, "
+            "so no field calibration exists. Use Amps."
+        )
 
-    def _read_field_bytes(self):
-        """
-        Sends the field query and echoes the three bytes back, as the device
-        expects. Returns (b1, b2, b3) or None if the read timed out.
-        """
-        self._write(CMD_QUERY_FIELD)
-
-        received = []
-        for _ in range(3):  # magnitude high, magnitude low, sign flag
-            byte = self._read_one_byte()
-            if byte is None:
-                return None
-            self._write(byte)  # every byte must be echoed back
-            received.append(byte)
-        return tuple(received)
-
-    def _decode_field(self, field_bytes):
-        """Turns the three queried bytes into a field in mT."""
-        byte1, byte2, byte3 = field_bytes
-        raw_magnitude = (byte1 << 8) | byte2
-        scaled_magnitude = raw_magnitude / FIELD_SCALE
-        return -scaled_magnitude if byte3 == FIELD_SIGN_NEGATIVE else scaled_magnitude
+    def stop(self):
+        """De-energises the magnet: the single captured STOP byte."""
+        print("  Sending STOP (0x27)...")
+        self._command(CMD_STOP)
+        print("  STOP complete.")
 
     def stop_and_query_field(self):
         """
-        Stops the current and queries the field, replicating the log sequence.
-        Returns the field reading in mT.
+        Stops the current. Returns None: this magnet offers no field reading
+        (broken gaussmeter, and no query opcode has been captured either).
+        Kept under the EM3000S name so the logic scripts work unchanged.
         """
-        print("\n  Sending STOP and QUERY sequence...")
-
-        # --- Part 1: Send STOP command ---
-        self._write(CMD_READY); self._read_one_byte()   # Ready Check
-        self._write(CMD_STOP); self._poll_for_byte(ACK)  # Stop Cmd
-
-        # --- Part 2: Send QUERY command ---
-        field_bytes = self._read_field_bytes()
-        if field_bytes is None:
-            return "Query Failed"
-
-        # --- Part 3: Finish the STOP sequence ---
-        self._write(CMD_STOP_TAIL[0]); self._read_one_byte()
-        self._write(CMD_STOP_TAIL[1])  # no response expected
-
-        self._write(CMD_READY); self._read_one_byte()  # Ready Check
-        self._write(CMD_END); self._poll_for_byte(ACK)  # End Cmd
-
-        print("  STOP/QUERY sequence complete.")
-
-        try:
-            final_value = self._decode_field(field_bytes)
-            print(f"  Received Bytes: {[f'0x{b:02X}' for b in field_bytes]}")
-            print(f"  Decoded Field: {final_value} mT")
-            return final_value
-        except Exception as e:
-            return f"Query Failed: Error decoding bytes: {e}"
+        self.stop()
+        print("  (no field reading available on the EM7000S)")
+        return None
 
     def query_field(self):
-        """
-        Queries the field without stopping the current.
-        Returns the field reading in mT.
-        """
-        # NOTE: inherited from EM3000S, where the stop command below means this
-        # does interrupt the drive despite the docstring. Re-check on capture.
-        self._write(CMD_READY); self._read_one_byte()   # Ready Check
-        self._write(CMD_STOP); self._poll_for_byte(ACK)  # Stop Cmd
-
-        field_bytes = self._read_field_bytes()
-        if field_bytes is None:
-            return "Query Failed"
-
-        try:
-            return self._decode_field(field_bytes)
-        except Exception as e:
-            Warning(f"Query Failed: Error decoding bytes: {e}")
-            return None
-
-    def current_map_test(self):
-        currs = np.arange(-.4, .4, 0.1)
-        for curr in currs:
-            print(f"--- Querying for {curr}A ---")
-            self.set_current(curr)
-            time.sleep(2)
-            field = self.stop_and_query_field()
-            print(f"  Measured Field: {field} mT")
-            print("---                       ---")
+        """No field reading available on the EM7000S; returns None."""
+        print("  (no field reading available on the EM7000S)")
+        return None
 
     def pulse(self, amps, duration_sec):
-        """
-        Pulses the magnet to a specified current for a given duration.
-        """
-        if not isinstance(duration_sec, int):
-            Warning("Duration should be an integer number of seconds. Using floor...")
-            duration_sec = int(duration_sec)
+        """Holds the given current for a duration, then stops."""
+        duration_sec = int(duration_sec)
         print(f"\n--- Pulsing magnet to {amps}A for {duration_sec} seconds ---")
         self.set_current(amps)
-        for i in range(int(duration_sec + self.startup_delay_sec)):
-            print(self.query_field(), "mT")
-            time.sleep(1)
-        field = self.stop_and_query_field()
-        print(f"  Measured Field after pulse: {field} mT")
+        time.sleep(duration_sec)
+        self.stop()
         print("--- Pulse complete ---")
 
 
 if __name__ == "__main__":
-    magnet = MagnetController(resource_name='ASRL5::INSTR')
+    magnet = MagnetController()
     magnet.connect()
-    magnet.pulse(3.0, 5)
-    magnet.pulse(-3.0, 5)
-    magnet.disconnect()
+    try:
+        magnet.pulse(1.0, 3)
+        magnet.pulse(-1.0, 3)
+    finally:
+        magnet.stop()
+        magnet.disconnect()

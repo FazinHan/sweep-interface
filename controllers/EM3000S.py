@@ -1,8 +1,9 @@
 import pyvisa
 import time,os
 import numpy as np
-import pandas as pd
 from dotenv import load_dotenv
+
+from field_calibration import current_for_field
 
 load_dotenv()
 
@@ -47,6 +48,11 @@ class MagnetController:
 
     def connect(self):
         """Initializes and configures the serial connection."""
+        if not self.resource_name or self.resource_name == "None":
+            raise RuntimeError(
+                "No magnet address: EM_ID is unset in controllers/.env. "
+                "Run 'Detect Insts!' with the magnet powered and plugged in."
+            )
         print(f"Connecting to {self.resource_name} at {self.baud_rate} baud...")
         self.inst = self.rm.open_resource(self.resource_name)
         self.inst.baud_rate = self.baud_rate
@@ -122,14 +128,15 @@ class MagnetController:
     def set_field(self, field):
         """
         Sets the electromagnet field to a known value in mT based on
-        calibration data. Run field_calibration.py to generate.
+        calibration data. Run calibration.py against this magnet to generate.
+
+        The fit is unchanged; field_calibration also checks that the curve
+        actually covers the requested field, since a trimmed or truncated
+        calibration file otherwise returns a confident, wrong current.
         """
-        dataframe = pd.read_csv(self.calibration_file)
-        field_cal = dataframe['Field_mT'].values
-        current_cal = dataframe['Current_A'].values
-        coeffs = np.polyfit(field_cal, current_cal, 3) # does curve fitting each time function is called - SLOW
-        current_from_field = np.poly1d(coeffs)
-        self.set_current(current_from_field(field))
+        # Re-reads and re-fits on every call - SLOW, but keeps a calibration
+        # written mid-session from being ignored.
+        self.set_current(current_for_field(self.calibration_file, field))
         return field
 
     def stop_and_query_field(self):

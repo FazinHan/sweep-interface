@@ -71,10 +71,6 @@ class MagnetController:
         self.inst = True
         return "EMULATED_MAGNET"
 
-    def disconnect(self):
-        self.rm = None
-        self.vna = None
-
     def set_current(self, current):
         if self.inst is None:
             raise RuntimeError("Magnet Controller not connected.")

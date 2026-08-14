@@ -37,17 +37,32 @@ subdir = f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT
 
 dir = os.path.join("data",subdir)
 
-assert os.path.isdir(dir), "Data does not exist, recheck values entered in inputs."
+if not os.path.isdir(dir):
+    raise FileNotFoundError(
+        f"No data at '{dir}'. Recheck the values entered in the Experiment tab "
+        f"- the folder name is built from them, so a different low/high/step "
+        f"(or the sweep-down setting) points at a different folder."
+    )
 
-ss = 1
-subdir = os.path.join(dir, str(ss))
-while os.path.isdir(subdir):
-    ss += 1
-    subdir = os.path.join(dir, str(ss))
-else:
-    subdir = os.path.join(dir, str(ss-1))
 
-dir = subdir
+def latest_run(sweep_dir):
+    """
+    The highest-numbered run directory inside a sweep directory.
+
+    Counting up from 1 until a miss lands on run 0 when the sweep folder exists
+    but holds no runs yet, and stops early if an intermediate run was deleted.
+    """
+    runs = [int(name) for name in os.listdir(sweep_dir)
+            if name.isdigit() and os.path.isdir(os.path.join(sweep_dir, name))]
+    if not runs:
+        raise FileNotFoundError(
+            f"'{sweep_dir}' has no run directories in it. Run the experiment "
+            f"for these parameters before plotting."
+        )
+    return os.path.join(sweep_dir, str(max(runs)))
+
+
+dir = latest_run(dir)
 
 AXIS_LABEL = f"{'Field' if UNIT == 'mT' else 'Current'} ({UNIT})"
 
@@ -65,6 +80,11 @@ def _data_files(dirname):
 
 def import_data(dirname=dir):
     files = _data_files(dirname)
+    if not files:
+        raise FileNotFoundError(
+            f"'{dirname}' holds no CSV files - the run was probably aborted "
+            f"before its first point finished."
+        )
     currs = np.array([_parse_value(f) for f in files])
     s_param_dict = {'S11 (db)': [], 'S12 (db)': [], 'S21 (db)': [], 'S22 (db)': []}
     for file in files:

@@ -231,6 +231,8 @@ def load_config():
         dev_vna_var.set(config.get('Devices', 'vna', fallback=devices.DEFAULT_VNA))
         stabilize_var.set(config.get('Settings', 'stabilize_time',
                                      fallback=str(devices.DEFAULT_STABILIZE_TIME)))
+        em7000s_coils_var.set(config.get('EM7000S', 'coils',
+                                         fallback=str(devices.DEFAULT_EM7000S_COILS)))
         status_var.set("Config loaded successfully.")
     except Exception as e:
         status_var.set("Error reading config file.")
@@ -244,6 +246,7 @@ def save_config():
     if 'Magnet' not in config: config['Magnet'] = {}
     if 'Devices' not in config: config['Devices'] = {}
     if 'Settings' not in config: config['Settings'] = {}
+    if 'EM7000S' not in config: config['EM7000S'] = {}
     try:
         config['Experiment']['low'] = exp_low_var.get()
         config['Experiment']['high'] = exp_high_var.get()
@@ -257,6 +260,7 @@ def save_config():
         config['Devices']['vna'] = dev_vna_var.get()
         # An empty box must not reach the controllers as int('').
         config['Settings']['stabilize_time'] = stabilize_var.get() or str(devices.DEFAULT_STABILIZE_TIME)
+        config['EM7000S']['coils'] = em7000s_coils_var.get() or str(devices.DEFAULT_EM7000S_COILS)
         with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
         # status_var.set("Parameters saved.") # Optional: don't overwrite "Running..." status
@@ -317,11 +321,54 @@ def on_probe_magnet_click():
 def on_stop_magnet_click():
     schedule_script(STOP_MAGNET_SCRIPT)
 
+def apply_magnet_capabilities():
+    """
+    Shows only what the selected magnet can actually do.
+
+    Field mode turns a value in mT into a current through a calibration curve,
+    so a magnet without a trustworthy curve can only be driven in Amps. For
+    one of those, the mT choice is disabled, any mT already selected falls back
+    to Amps, and the Calibration tab is hidden outright — running a calibration
+    is how you would build the curve, and that needs control signals the magnet
+    does not have yet.
+    """
+    supports_field = devices.magnet_supports_field(dev_magnet_var.get())
+
+    radio_state = 'normal' if supports_field else 'disabled'
+    exp_mt_radio.configure(state=radio_state)
+    mag_mt_radio.configure(state=radio_state)
+
+    # The coils selector belongs to the EM7000S alone.
+    coils_combo.configure(
+        state='readonly' if dev_magnet_var.get() == 'EM7000S' else 'disabled')
+
+    if supports_field:
+        tab_control.tab(tab_cal, state='normal')
+        return
+
+    # Nothing may be left pointing at mT once the option is gone.
+    if 'mT' in (exp_unit_var.get(), mag_unit_var.get()):
+        exp_unit_var.set('A')
+        mag_unit_var.set('A')
+        status_var.set(f"{dev_magnet_var.get()}: Amps only — unit reset to A.")
+    tab_control.tab(tab_cal, state='hidden')
+
 def on_device_change(event=None):
     """Persists the device selection immediately: the controllers read it from
     params.ini when they start, so it must be on disk before the next run."""
+    # Reconcile the unit first: apply_magnet_capabilities may force it to A,
+    # and that has to reach the file in this same save.
+    apply_magnet_capabilities()
     save_config()
-    status_var.set(f"Devices: {dev_magnet_var.get()} + {dev_vna_var.get()}")
+    magnet = dev_magnet_var.get()
+    limits = "" if devices.magnet_supports_field(magnet) else " (Amps only)"
+    status_var.set(f"Devices: {magnet}{limits} + {dev_vna_var.get()}")
+
+def on_coils_change():
+    """Coil count is read by the controllers at process start, like the device
+    selection, so it goes to disk the moment it changes."""
+    save_config()
+    status_var.set(f"EM7000S: {em7000s_coils_var.get()} coil(s) energised.")
 
 def on_stabilize_change(event=None):
     """Same deal for the settle time — write it out as soon as the box loses
@@ -403,6 +450,7 @@ mag_probe_var = tk.StringVar(value='---')
 dev_magnet_var = tk.StringVar(value=devices.DEFAULT_MAGNET)
 dev_vna_var = tk.StringVar(value=devices.DEFAULT_VNA)
 stabilize_var = tk.StringVar(value=str(devices.DEFAULT_STABILIZE_TIME))
+em7000s_coils_var = tk.StringVar(value=str(devices.DEFAULT_EM7000S_COILS))
 
 # --- Tabbed Interface ---
 tab_control = ttk.Notebook(root)
@@ -429,7 +477,9 @@ ttk.Entry(exp_inputs, textvariable=exp_step_var, validate='key', validatecommand
 radio_frame = ttk.Frame(exp_inputs)
 radio_frame.grid(row=3, column=0, columnspan=2, pady=10)
 ttk.Radiobutton(radio_frame, text="A", variable=exp_unit_var, value="A").pack(side=tk.LEFT, padx=5)
-ttk.Radiobutton(radio_frame, text="mT", variable=exp_unit_var, value="mT").pack(side=tk.LEFT, padx=5)
+# Kept as a name: disabled for magnets with no field calibration.
+exp_mt_radio = ttk.Radiobutton(radio_frame, text="mT", variable=exp_unit_var, value="mT")
+exp_mt_radio.pack(side=tk.LEFT, padx=5)
 
 ttk.Checkbutton(exp_inputs, text="Sweep down", variable=exp_sweep_down_var).grid(row=4, column=0, columnspan=2, sticky='w', pady=10)
 
@@ -478,7 +528,8 @@ ttk.Entry(mag_inputs, textvariable=mag_val_var, validate='key', validatecommand=
 mag_radio_frame = ttk.Frame(mag_inputs)
 mag_radio_frame.grid(row=1, column=0, columnspan=2, pady=10)
 ttk.Radiobutton(mag_radio_frame, text="A", variable=mag_unit_var, value="A").pack(side=tk.LEFT, padx=5)
-ttk.Radiobutton(mag_radio_frame, text="mT", variable=mag_unit_var, value="mT").pack(side=tk.LEFT, padx=5)
+mag_mt_radio = ttk.Radiobutton(mag_radio_frame, text="mT", variable=mag_unit_var, value="mT")
+mag_mt_radio.pack(side=tk.LEFT, padx=5)
 
 # Buttons
 ttk.Button(mag_buttons, text="Set Field", command=on_set_magnet_click).pack(fill=tk.X, pady=5)
@@ -530,12 +581,33 @@ Tooltip(stabilize_hint,
         "the experiment, which readings are then averaged to eliminate "
         "static noise.")
 
+# EM7000S-specific: how many of its coils to energise. Greyed out while any
+# other magnet is selected (apply_magnet_capabilities drives the state).
+ttk.Label(cfg_inputs, text="EM7000S coils energised:").grid(row=3, column=0, sticky='w', pady=5)
+coils_combo = ttk.Combobox(cfg_inputs, textvariable=em7000s_coils_var,
+                           values=[str(n) for n in range(devices.EM7000S_COILS_MIN,
+                                                         devices.EM7000S_COILS_MAX + 1)],
+                           state='readonly', width=18)
+coils_combo.grid(row=3, column=1, sticky='ew', padx=(10, 0))
+coils_combo.bind('<<ComboboxSelected>>', lambda e: on_coils_change())
+
+coils_hint = ttk.Label(cfg_inputs, text=" ? ", relief='raised',
+                       foreground='blue', cursor='question_arrow')
+coils_hint.grid(row=3, column=2, sticky='w', padx=(6, 0))
+Tooltip(coils_hint,
+        "How many of the EM7000S's four coils are energised. The field "
+        "produced per ampere depends on this, so treat it as part of the "
+        "rig: change it and any field calibration taken at a different "
+        "coil count no longer applies.")
+
 ttk.Label(cfg_inputs, text="Saved to params.ini; every controller\n"
                           "reads it when it starts.",
-          justify='left', foreground='grey').grid(row=3, column=0, columnspan=3,
+          justify='left', foreground='grey').grid(row=4, column=0, columnspan=3,
                                                   sticky='w', pady=(15, 0))
 
 ttk.Button(cfg_buttons, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)
+ttk.Separator(cfg_buttons, orient='horizontal').pack(fill='x', pady=10)
+ttk.Button(cfg_buttons, text="ABORT", command=on_abort_click, style='Danger.TButton').pack(fill=tk.X, pady=5)
 
 # --- Style ---
 style = ttk.Style()
@@ -549,6 +621,9 @@ status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
 # --- Start Up ---
 load_config()
+# After load_config: the saved magnet decides whether field mode and the
+# Calibration tab are available at all.
+apply_magnet_capabilities()
 
 # 1. Start the asyncio loop in a separate thread
 t = threading.Thread(target=start_background_loop, args=(loop,), daemon=True)

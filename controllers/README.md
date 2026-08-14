@@ -54,13 +54,25 @@ The core logic resides in `controllers/`. These scripts are designed to be run a
 * **Safety**: Implements `stop_and_query_field()` to safely ramp down the magnet before disconnecting.
 
 
-* **`EM7000S.py` (Magnet Driver, not yet operational)**:
+* **`EM7000S.py` (Magnet Driver)**:
 * Same public API as `EM3000S.py`, so every logic script drives it unchanged.
-* **Control signals**: opcodes, link settings, current limit, current-mapping
-coefficients and calibration filename are all hoisted into one block at the top of
-the file. The values there are EM3000S placeholders, **not** EM7000S measurements.
-* **Guard**: `connect()` raises until `SIGNALS_VERIFIED = True`. Capture the vendor
-application driving an EM7000S, correct the block, re-calibrate, then flip the flag.
+* **Protocol** (captured from the vendor app, 2026-08-14; full notes in the file
+header): replies are `2×` the command byte (no fixed ACK); four per-coil enable
+opcodes (`0x1E`–`0x21`) and value channels (`0x28`–`0x2B`); a 5-byte payload per
+channel `[high, low, 0x00, sign, 0x00]`; commit `0x0A → 0x19`; stop is the single
+echoed byte `0x27`. **`0x2B` is a coil channel here, not the EM3000S stop** — never
+share constants between the drivers.
+* **Coil count** (1–4, Configuration tab, `[EM7000S]` in `params.ini`) is expressed
+purely by which channels a set sequence writes; the vendor app sends nothing when the
+setting changes. 1- and 4-coil sequences are captured verbatim; 2 and 3 are inferred
+and warn until verified.
+* **Current mapping**: the captured (amps → counts) pairs are used as an
+interpolation table rather than a fitted curve, so captured currents reproduce the
+vendor app's bytes exactly. Limit ±4.2 A (from the vendor app's own dialog).
+* **Amps only**: registered with `supports_field=False` — the gaussmeter is broken,
+so no calibration curve can be measured. The GUI disables **mT** and hides the
+**Calibration** tab while this magnet is selected; `set_field()` raises, and the
+field queries return `None`.
 
 
 * **`VNA.py` (VNA Driver)**:
@@ -71,10 +83,11 @@ application driving an EM7000S, correct the block, re-calibrate, then flip the f
 
 ### Device Registry (`devices.py`)
 
-The single place that knows which drivers exist. `MAGNETS` and `VNAS` map the display
-name shown in the app's **Configuration** tab to `(module, class)`; the selection is read
-from `params.ini` `[Devices]` and the driver is imported lazily, so an unselected or
-half-finished driver can never break a run.
+The single place that knows which drivers exist. `MAGNETS` maps the display name shown
+in the app's **Configuration** tab to a `MagnetSpec(module, cls, supports_field)`, and
+`VNAS` maps to `(module, class)`; the selection is read from `params.ini` `[Devices]` and
+the driver is imported lazily, so an unselected or half-finished driver can never break
+a run.
 
 ```python
 from devices import get_magnet_controller
@@ -88,6 +101,35 @@ Per-magnet differences that logic scripts rely on are class attributes: `max_cur
 (the |I| limit, and the span `calibration.py` sweeps) and `calibration_file` (that
 magnet's own mT ↔ A curve, read back by `set_field()`).
 
+**Field capability.** `supports_field=False` marks a magnet that has no trustworthy
+mT ↔ A curve and so can only be commanded in Amps. It lives in the registry rather than
+on the driver class so the Tk process can ask without importing pyvisa just to grey out
+a radio button. Two consumers:
+
+* `magnet_supports_field(name)` — what `app.py` calls to disable the **mT** radio
+buttons and hide the **Calibration** tab (running a calibration is how the curve would
+be built, and that needs control signals such a magnet does not have yet).
+* `require_field_support(unit)` — the guard `experiment.py` and `set_magnet.py` call
+before touching hardware, since `params.ini` is editable text and may be left over from
+another magnet.
+
+### Field Calibration (`field_calibration.py`)
+
+Shared loading, validation and use of a magnet's mT ↔ A curve; talks to no device. Both
+drivers call `current_for_field(path, field)`, which is the same cubic fit of current
+against measured field as before, wrapped in checks:
+
+* rows with unreadable values are dropped (one failed reading would otherwise turn every
+`set_field()` into a NaN current);
+* fewer than `MIN_POINTS` (4, what a cubic needs) is an error naming the file;
+* a field outside the measured range is an error — that is extrapolation, and a cubic
+leaving its data does so steeply;
+* a field inside a gap wider than `MAX_GAP_FRACTION` of the measured span warns loudly
+but proceeds, because a sparse curve over a near-linear magnet is still usable.
+
+The checks exist because a bad curve is otherwise silent: the magnet simply sits at the
+wrong field for the whole experiment.
+
 The module also serves rig-wide settings from `[Settings]`. `stabilize_time()` returns
 the seconds to wait for the equipment to settle before each VNA read; `experiment.py`
 and `calibration.py` take their `STABILIZE_TIME` from it. Blank or malformed values log
@@ -98,8 +140,12 @@ that is already underway.
 
 * **`detect.py`**:
 * Scans all VISA resources (`@py` backend).
-* Heuristically identifies instruments (ASRL = Magnet, TCPIP = VNA).
-* **Output**: Writes confirmed Resource IDs to `.env`.
+* Heuristically identifies instruments (ASRL = Magnet, TCPIP = VNA). Several matches
+for one transport is a warning naming all of them, and the first is used.
+* **Output**: Writes confirmed Resource IDs to `.env`. An instrument that is *not*
+found leaves its previous address alone rather than writing a placeholder — that is
+what produced `EM_ID=None`, which drivers then passed to `open_resource()` as the
+literal string `"None"`. Exits non-zero if nothing at all is found.
 
 
 * **`experiment.py`**:
@@ -113,6 +159,16 @@ that is already underway.
 * Records internal Gaussmeter readings to map **Amps  mT**.
 * **Output**: `magnet.calibration_file` — `field_calibration_data.csv` for the EM3000S,
 `field_calibration_data_em7000s.csv` for the EM7000S.
+* **Never loses a sweep.** A point takes the stabilisation time, so a full run is
+hours of hardware time. A reading that does not come back is written blank and the
+sweep carries on (it used to die on `f"{field:.2f}"` when `query_field()` returned
+`"Query Failed"`); every point is appended to `<calibration_file>.partial` and flushed
+as it is measured, so an ABORT — which on Windows terminates the process outright, with
+no chance to run cleanup — still leaves everything collected up to that moment on disk.
+* **Never overwrites blindly.** The real file is only replaced once a sweep has
+finished with at least `MIN_POINTS` usable points, and the file it replaces is kept
+under a timestamped `.bak` name. A sweep that fails leaves the old curve in place and
+its own data in the `.partial` file.
 
 
 * **`abort_all.py`**:

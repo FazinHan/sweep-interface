@@ -27,6 +27,11 @@ class VNAController:
 
     # --- lifecycle ------------------------------------------------------------
     def connect(self):
+        if not self.resource_str or self.resource_str == "None":
+            raise RuntimeError(
+                "No VNA address: VNA_ID is unset in controllers/.env. "
+                "Run 'Detect Insts!' with the VNA powered and on the network."
+            )
         self.rm = pyvisa.ResourceManager(self.backend) if self.backend else pyvisa.ResourceManager()
         self.vna = self.rm.open_resource(self.resource_str)
         self.vna.timeout = self.timeout_ms
@@ -72,8 +77,12 @@ class VNAController:
         self.vna.write(f"SOUR1:POW {power_dbm}")
         print(f"VNA source power set to {power_dbm} dBm")
 
-        if self.get_power() != power_dbm:
-            warnings.warn(f"Failed to set power to {power_dbm} dBm. Current power: {self.get_power()} dBm")
+        # Read back once and compare with a tolerance: the value makes a round
+        # trip through the instrument's own text formatting, so an exact float
+        # comparison warns about settings that were applied perfectly well.
+        actual = self.get_power()
+        if abs(actual - float(power_dbm)) > self.POWER_TOLERANCE_DB:
+            warnings.warn(f"Failed to set power to {power_dbm} dBm. Current power: {actual} dBm")
 
     def get_power(self):
         """

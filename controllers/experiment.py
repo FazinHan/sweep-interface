@@ -1,4 +1,5 @@
-from devices import get_magnet_controller, get_vna_controller, stabilize_time
+from devices import (get_magnet_controller, get_vna_controller,
+                     require_field_support, stabilize_time)
 from progress import countdown
 
 # Drivers come from the Configuration tab's selection ([Devices] in params.ini).
@@ -35,6 +36,9 @@ try:
 except Exception as e:
     raise ValueError("Error reading config file.")
 
+# Fail before creating a run directory or touching the magnet.
+require_field_support(UNIT)
+
 pathname = os.path.join(dir, f"s_params_{CURRENT_LOW}{UNIT}_to_{CURRENT_HIGH}{UNIT}_step_{STEP}{UNIT}{'_DOWN' if DOWN else ''}")
 
 # s_params = ['s11', 's12', 's21', 's22']
@@ -59,7 +63,6 @@ print("Sweeping...")
 currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
 if DOWN:
     currs = currs[::-1]  # Reverse the array if sweeping down
-s_param_magnitudes = {'s11': [], 's12': [], 's21': [], 's22': []}
 
 for curr in currs:
     print(f"Setting field to {curr:.2f} {UNIT}...")
@@ -121,6 +124,7 @@ print("Stopping magnet...")
 magnet.stop_and_query_field()
 
 magnet.disconnect()
+vna.close()
 
 print("Data saved.\n")
 
