@@ -139,13 +139,36 @@ that is already underway.
 ### Logic Scripts
 
 * **`detect.py`**:
-* Scans all VISA resources (`@py` backend).
-* Heuristically identifies instruments (ASRL = Magnet, TCPIP = VNA). Several matches
-for one transport is a warning naming all of them, and the first is used.
+* Scans all VISA resources (`@py` backend) for the **magnet**, classifying serial
+candidates by hardware id so a Bluetooth virtual port can never be chosen.
+* The **VNA is not discoverable by enumeration** — NI-VISA lists only TCPIP
+resources already registered in NI-MAX, and pyvisa-py needs `zeroconf` plus an
+instrument advertising over mDNS. Its address is therefore configuration:
+`[Devices]/vna_address` in `params.ini` (bare IP or a full VISA string), which
+`detect.py` verifies with `*IDN?` before writing.
 * **Output**: Writes confirmed Resource IDs to `.env`. An instrument that is *not*
 found leaves its previous address alone rather than writing a placeholder — that is
-what produced `EM_ID=None`, which drivers then passed to `open_resource()` as the
+what produced `VNA_ID=None`, which drivers then passed to `open_resource()` as the
 literal string `"None"`. Exits non-zero if nothing at all is found.
+
+### Bring-up and capture tooling
+
+Used to reverse-engineer the EM7000S; kept because they are how the next magnet
+(or a firmware change) gets handled. None of them are imported by the app.
+
+* **`replay_em7000s.py`** — the regression test for the control signals. Replays the
+driver against the captured byte exchanges using a fake instrument that answers as
+the real magnet did, and compares byte-for-byte. Run it after touching any opcode,
+the payload layout or the current table. Needs no hardware.
+* **`probe_em7000s.py`** — read-only serial probe. Sends only opcodes that cannot
+raise the current, and refuses to echo a byte that could begin a set sequence.
+* **`decode_capture.py`** — USBPcap `.pcap` → FTDI control requests (baud, framing,
+DTR/RTS) plus a chronological byte transcript, stripping the two modem-status bytes
+FTDI prepends to every IN transfer.
+* **`analyse_capture.py`** — that transcript → labelled sequences, classifying each
+byte as command (reply doubled), echo, or device data, split on idle gaps.
+* **`find_lxi.py`** — mDNS discovery for LAN instruments, for when the VNA does not
+appear. Pure stdlib; no port scanning.
 
 
 * **`experiment.py`**:

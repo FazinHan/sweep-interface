@@ -15,10 +15,25 @@ Two things this has to get right, both learned the hard way:
 
 Disconnect any other USB-serial devices before running: past the Bluetooth
 filter, the match is still by transport rather than by identity.
+
+A LAN instrument cannot be discovered this way at all, and this no longer
+pretends otherwise. NI-VISA lists only TCPIP resources already configured in
+NI-MAX, and pyvisa-py needs the zeroconf package plus an instrument that
+advertises over mDNS. So the VNA's address is configuration, not a discovery
+result: put it in params.ini as
+
+    [Devices]
+    vna_address = 192.168.1.10        ; or a full TCPIP0::...::INSTR string
+
+and it is verified with *IDN? rather than guessed at. With no address
+configured and none enumerated, the VNA is reported as not configured.
 """
+import configparser
 import os
 
 import pyvisa
+
+CONFIG_FILE = 'params.ini'
 
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 
@@ -80,7 +95,7 @@ def pick_magnet(matches, hwids):
 
 
 def pick_vna(matches):
-    """The first LAN resource, warning if the choice was ambiguous."""
+    """The first enumerated LAN resource, warning if the choice was ambiguous."""
     if not matches:
         return None
     if len(matches) > 1:
@@ -88,6 +103,45 @@ def pick_vna(matches):
               f"({', '.join(matches)}).")
         print(f"WARNING: assuming the VNA is {matches[0]}.")
     return matches[0]
+
+
+def configured_vna_address():
+    """[Devices]/vna_address from params.ini, normalised to a VISA string."""
+    config = configparser.ConfigParser()
+    if os.path.exists(CONFIG_FILE):
+        config.read(CONFIG_FILE)
+    address = config.get('Devices', 'vna_address', fallback='').strip()
+    if not address:
+        return None
+    if '::' in address:
+        return address                       # already a VISA resource string
+    return f"TCPIP0::{address}::inst0::INSTR"
+
+
+def verify_vna(resource):
+    """
+    Opens `resource` and asks *IDN?. Returns the identity string, or None with
+    the reason printed -- a configured address that does not answer is worth
+    saying out loud rather than writing to .env and failing later mid-sweep.
+    """
+    print(f"Checking configured VNA address {resource} ...")
+    rm = pyvisa.ResourceManager('@py')
+    try:
+        inst = rm.open_resource(resource, open_timeout=5000)
+        inst.timeout = 5000
+        inst.read_termination = '\n'
+        inst.write_termination = '\n'
+        try:
+            identity = inst.query('*IDN?').strip()
+        finally:
+            inst.close()
+        print(f"  responded: {identity}")
+        return identity
+    except Exception as exc:
+        print(f"  no response: {type(exc).__name__}: {exc}")
+        return None
+    finally:
+        rm.close()
 
 
 def read_env(path):
@@ -130,10 +184,25 @@ if magnet:
     found['EM_ID'] = magnet
     print(f"Found Electromagnet at {magnet} ({com_name(magnet)})")
 
-vna = pick_vna([i for i in instruments if 'TCPIP' in i])
-if vna:
-    found['VNA_ID'] = vna
-    print(f"Found VNA at {vna}")
+# The VNA: a configured address wins, because enumeration cannot see a LAN
+# instrument that has not been registered with the VISA backend already.
+configured = configured_vna_address()
+if configured:
+    if verify_vna(configured):
+        found['VNA_ID'] = configured
+        print(f"Found VNA at {configured}")
+    else:
+        print(f"The configured VNA address {configured} did not answer *IDN?. "
+              f"Not writing it to .env.")
+else:
+    vna = pick_vna([i for i in instruments if 'TCPIP' in i])
+    if vna:
+        found['VNA_ID'] = vna
+        print(f"Found VNA at {vna}")
+    else:
+        print("No VNA address configured. A LAN instrument cannot be "
+              "discovered by enumeration -- set [Devices]/vna_address in "
+              "params.ini to its IP.")
 
 if not found:
     print("No instruments found. Nothing written to .env.")
