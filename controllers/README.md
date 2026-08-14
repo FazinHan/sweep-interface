@@ -141,11 +141,15 @@ that is already underway.
 * **`detect.py`**:
 * Scans all VISA resources (`@py` backend) for the **magnet**, classifying serial
 candidates by hardware id so a Bluetooth virtual port can never be chosen.
-* The **VNA is not discoverable by enumeration** — NI-VISA lists only TCPIP
-resources already registered in NI-MAX, and pyvisa-py needs `zeroconf` plus an
-instrument advertising over mDNS. Its address is therefore configuration:
-`[Devices]/vna_address` in `params.ini` (bare IP or a full VISA string), which
-`detect.py` verifies with `*IDN?` before writing.
+* The **VNA** is searched for three ways in order, because VISA enumeration alone
+does not find one (NI-VISA lists only resources already registered in NI-MAX;
+pyvisa-py needs `zeroconf`): `[Devices]/vna_address` in `params.ini` if set, then
+enumeration, then **mDNS** (`find_lxi.discover`). Each candidate is confirmed with
+`*IDN?` before being written.
+* mDNS is link-local multicast, so an instrument on a *mismatched subnet* still
+answers it even though no unicast connection can succeed. When that happens
+`detect.py` reports the discovered address and says the addressing is wrong,
+rather than reporting no VNA at all.
 * **Output**: Writes confirmed Resource IDs to `.env`. An instrument that is *not*
 found leaves its previous address alone rather than writing a placeholder — that is
 what produced `VNA_ID=None`, which drivers then passed to `open_resource()` as the

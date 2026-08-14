@@ -16,22 +16,31 @@ Two things this has to get right, both learned the hard way:
 Disconnect any other USB-serial devices before running: past the Bluetooth
 filter, the match is still by transport rather than by identity.
 
-A LAN instrument cannot be discovered this way at all, and this no longer
-pretends otherwise. NI-VISA lists only TCPIP resources already configured in
-NI-MAX, and pyvisa-py needs the zeroconf package plus an instrument that
-advertises over mDNS. So the VNA's address is configuration, not a discovery
-result: put it in params.ini as
+A LAN instrument is searched for three ways, in order, because VISA
+enumeration alone will not find one: NI-VISA lists only TCPIP resources
+already registered in NI-MAX, and pyvisa-py needs the zeroconf package.
 
-    [Devices]
-    vna_address = 192.168.1.10        ; or a full TCPIP0::...::INSTR string
+    1. [Devices]/vna_address in params.ini, if set -- a bare IP or a full
+       TCPIP0::...::INSTR string. An explicit answer always wins.
+    2. VISA enumeration, for a resource the backend already knows about.
+    3. mDNS, which is how an LXI instrument announces itself.
 
-and it is verified with *IDN? rather than guessed at. With no address
-configured and none enumerated, the VNA is reported as not configured.
+Whatever turns up is confirmed with *IDN? before being written to .env, so a
+stale or wrong address fails here rather than part-way through a sweep.
+
+mDNS earns its place precisely because it is link-local multicast: an
+instrument whose IP is on a different subnet from ours still answers it, even
+though no unicast connection to it can succeed. That is the difference between
+"there is no VNA" and "the VNA is at 10.40.64.225 and the addressing is
+wrong", so a device that announces itself but will not answer *IDN? is
+reported with that diagnosis rather than silently dropped.
 """
 import configparser
 import os
 
 import pyvisa
+
+from find_lxi import discover
 
 CONFIG_FILE = 'params.ini'
 
@@ -118,13 +127,13 @@ def configured_vna_address():
     return f"TCPIP0::{address}::inst0::INSTR"
 
 
-def verify_vna(resource):
+def verify_vna(resource, source='configured'):
     """
     Opens `resource` and asks *IDN?. Returns the identity string, or None with
-    the reason printed -- a configured address that does not answer is worth
-    saying out loud rather than writing to .env and failing later mid-sweep.
+    the reason printed -- an address that does not answer is worth saying out
+    loud rather than writing to .env and failing later mid-sweep.
     """
-    print(f"Checking configured VNA address {resource} ...")
+    print(f"Checking {source} VNA address {resource} ...")
     rm = pyvisa.ResourceManager('@py')
     try:
         inst = rm.open_resource(resource, open_timeout=5000)
@@ -184,25 +193,53 @@ if magnet:
     found['EM_ID'] = magnet
     print(f"Found Electromagnet at {magnet} ({com_name(magnet)})")
 
-# The VNA: a configured address wins, because enumeration cannot see a LAN
-# instrument that has not been registered with the VISA backend already.
-configured = configured_vna_address()
-if configured:
-    if verify_vna(configured):
-        found['VNA_ID'] = configured
-        print(f"Found VNA at {configured}")
-    else:
-        print(f"The configured VNA address {configured} did not answer *IDN?. "
-              f"Not writing it to .env.")
-else:
-    vna = pick_vna([i for i in instruments if 'TCPIP' in i])
-    if vna:
-        found['VNA_ID'] = vna
-        print(f"Found VNA at {vna}")
-    else:
-        print("No VNA address configured. A LAN instrument cannot be "
-              "discovered by enumeration -- set [Devices]/vna_address in "
-              "params.ini to its IP.")
+def resolve_vna(enumerated):
+    """
+    Configured address, then VISA enumeration, then mDNS. Returns a verified
+    resource string, or None (having explained what it saw).
+    """
+    configured = configured_vna_address()
+    if configured:
+        if verify_vna(configured):
+            return configured
+        print(f"  the configured address {configured} did not answer; "
+              f"trying the other routes.")
+
+    enumerated_vna = pick_vna(enumerated)
+    if enumerated_vna and verify_vna(enumerated_vna, source='enumerated'):
+        return enumerated_vna
+
+    print("Asking the network for LXI instruments (mDNS)...")
+    hosts = discover(verbose=False)
+    if not hosts:
+        print("  nothing answered.")
+        return None
+
+    for ip in sorted(hosts):
+        names = ', '.join(sorted(hosts[ip]))
+        print(f"  {ip} advertises: {names}")
+
+    for ip in sorted(hosts):
+        resource = f"TCPIP0::{ip}::inst0::INSTR"
+        if verify_vna(resource, source='discovered'):
+            return resource
+
+    # Reached only when something announced itself but will not talk. Say why.
+    print()
+    print("An instrument announced itself but would not answer *IDN?.")
+    print("mDNS is link-local multicast, so it gets through even when unicast")
+    print("cannot -- which usually means the instrument's IP is on a different")
+    print("subnet from the interface it is cabled to. Compare its address with")
+    print("this machine's, and give that interface an address on the same")
+    print("subnet (or set the instrument to DHCP). A VPN can also swallow")
+    print("local traffic; disconnect it and try again.")
+    return None
+
+
+vna = resolve_vna([i for i in instruments if 'TCPIP' in i])
+if vna:
+    found['VNA_ID'] = vna
+    print(f"Found VNA at {vna}")
 
 if not found:
     print("No instruments found. Nothing written to .env.")

@@ -96,7 +96,15 @@ def local_ipv4s():
     return sorted(addresses)
 
 
-def main():
+def discover(timeout=2.5, verbose=True):
+    """
+    Returns {ipv4: {advertised names}} for hosts answering LXI/SCPI mDNS.
+
+    Queries from every local interface: an instrument on a cable whose subnet
+    does not match ours still answers, because mDNS is link-local multicast.
+    That is exactly the case worth catching -- it is how a misaddressed
+    instrument makes itself known when nothing else about it works.
+    """
     found = {}
     for local in local_ipv4s():
         try:
@@ -106,10 +114,12 @@ def main():
             sock.bind((local, 0))
             sock.settimeout(0.4)
         except OSError as exc:
-            print(f"  {local:<16} cannot bind ({exc})")
+            if verbose:
+                print(f"  {local:<16} cannot bind ({exc})")
             continue
 
-        print(f"  querying from {local} ...")
+        if verbose:
+            print(f"  querying from {local} ...")
         try:
             for service in SERVICES:
                 try:
@@ -117,7 +127,7 @@ def main():
                 except OSError:
                     pass
 
-            deadline = time.time() + 2.5
+            deadline = time.time() + timeout
             while time.time() < deadline:
                 try:
                     data, addr = sock.recvfrom(4096)
@@ -131,6 +141,12 @@ def main():
                     found.setdefault(ip, set()).add(name)
         finally:
             sock.close()
+
+    return found
+
+
+def main():
+    found = discover()
 
     print()
     if not found:
