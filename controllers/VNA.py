@@ -12,14 +12,24 @@ class VNAController:
     Thin wrapper for R&S ZNLE SCPI over VISA (LAN).
     Provides read_s11/s12/s21/s22 methods returning (freq_hz, complex_sparam).
     """
-    def __init__(self, timeout_ms=50000, backend='@py'):
+    #: How far the read-back power may sit from the requested value before it
+    #: counts as a failure. The value makes a round trip through the
+    #: instrument's own text formatting, so an exact comparison would warn
+    #: about settings that were applied perfectly well.
+    POWER_TOLERANCE_DB = 0.05
+
+    def __init__(self, timeout_ms=50000, backend=None):
         """
-        ip: string, e.g. '192.168.1.20'
         timeout_ms: VISA timeout in milliseconds
-        backend: optional VISA backend string for pyvisa.ResourceManager(), e.g. '@ni'
+        backend: VISA backend string for pyvisa.ResourceManager(). Defaults to
+            devices.VISA_BACKEND (the system library, i.e. NI-VISA) so the VNA
+            and the magnets go through the same VISA implementation. Pass
+            '@py' to force pyvisa-py.
         """
-        # self.ip = os.getenv("VNA_IP")
         self.resource_str = os.getenv("VNA_ID")
+        if backend is None:
+            from devices import VISA_BACKEND
+            backend = VISA_BACKEND
         self.backend = backend
         self.timeout_ms = timeout_ms
         self.rm = None

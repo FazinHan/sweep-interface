@@ -52,6 +52,16 @@ VNAS = {
 DEFAULT_MAGNET = 'EM3000S'
 DEFAULT_VNA = 'ZNLE'
 
+#: VISA backend for every controller. Empty means the system VISA library,
+#: which on this rig is NI-VISA.
+#:
+#: NI-VISA is not optional here: the electromagnet's serial link does not work
+#: under pyvisa-py (see the top-level README). The VNA used to ask for '@py'
+#: while the magnets used the system library, so one process could be talking
+#: through two different VISA implementations at once. Everything now goes
+#: through the same one. Pass backend='@py' explicitly to override.
+VISA_BACKEND = ''
+
 #: Seconds to let the rig settle before each VNA read.
 DEFAULT_STABILIZE_TIME = 10
 

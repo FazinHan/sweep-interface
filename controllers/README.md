@@ -130,6 +130,12 @@ but proceeds, because a sparse curve over a near-linear magnet is still usable.
 The checks exist because a bad curve is otherwise silent: the magnet simply sits at the
 wrong field for the whole experiment.
 
+**VISA backend.** `VISA_BACKEND` (empty = the system library, i.e. NI-VISA) is the one
+backend every controller uses. NI-VISA is not optional on this rig — the electromagnet's
+serial link does not work under `pyvisa-py` — and the VNA previously asked for `'@py'`
+while the magnets used the system library, so a single process could be talking through
+two VISA implementations at once. Pass `backend='@py'` to `VNAController` to override.
+
 The module also serves rig-wide settings from `[Settings]`. `stabilize_time()` returns
 the seconds to wait for the equipment to settle before each VNA read; `experiment.py`
 and `calibration.py` take their `STABILIZE_TIME` from it. Blank or malformed values log

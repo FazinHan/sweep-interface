@@ -1,6 +1,9 @@
 """
-Uses pyvisa-py to discover connected instruments and record their VISA
-addresses in controllers/.env, where the drivers read them from.
+Discovers connected instruments and records their VISA addresses in
+controllers/.env, where the drivers read them from.
+
+Uses the rig's single VISA backend (devices.VISA_BACKEND, i.e. NI-VISA) so
+detection sees exactly what the drivers will see when they connect.
 
 Two things this has to get right, both learned the hard way:
 
@@ -40,9 +43,17 @@ import os
 
 import pyvisa
 
+from devices import VISA_BACKEND
 from find_lxi import discover
 
 CONFIG_FILE = 'params.ini'
+
+
+def resource_manager():
+    """The one VISA backend the whole rig uses (see devices.VISA_BACKEND)."""
+    if VISA_BACKEND:
+        return pyvisa.ResourceManager(VISA_BACKEND)
+    return pyvisa.ResourceManager()
 
 ENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 
@@ -134,7 +145,7 @@ def verify_vna(resource, source='configured'):
     loud rather than writing to .env and failing later mid-sweep.
     """
     print(f"Checking {source} VNA address {resource} ...")
-    rm = pyvisa.ResourceManager('@py')
+    rm = resource_manager()
     try:
         inst = rm.open_resource(resource, open_timeout=5000)
         inst.timeout = 5000
@@ -179,7 +190,7 @@ def write_env(path, values):
                 handle.write(f"{key}={values[key]}\n")
 
 
-rm = pyvisa.ResourceManager('@py')
+rm = resource_manager()
 instruments = rm.list_resources()
 hwids = serial_hwids()
 
