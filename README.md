@@ -64,9 +64,17 @@ nothing.
 An iron core keeps a remanent magnetisation, so the field at "0 A" is whatever the last
 run left behind, and an upward sweep does not retrace a downward one. **Degauss** (on
 both the Experiment and Magnet tabs) walks that out by alternating the current's polarity
-while decaying its amplitude, from the magnet's own limit down to a floor. Worth running
-before a measurement series, and after anything that left the magnet at a large one-sided
-current. Tune it under `[Degauss]` in `params.ini` (`steps`, `decay`, `dwell`).
+while decaying its amplitude:
+
+```
++1.00, -0.75, +0.56, -0.42, +0.32, -0.24, +0.18, -0.13, +0.10 A, then off
+```
+
+It starts mild — 1 A, not the magnet's full range — so a routine degauss is not the
+magnet's hardest duty of the day. The trade is that it cannot clear remanence left by
+being driven *harder* than the starting amplitude, so raise `[Degauss]/start` after a run
+that went near the limit. Tune `start`, `steps`, `decay` and `dwell` under `[Degauss]` in
+`params.ini`; the start is clamped to the selected magnet's own current limit.
 
 ### Nanovoltmeter (optional)
 Tick **Nanovoltmeter connected** on the Experiment tab to record a DC voltage at every

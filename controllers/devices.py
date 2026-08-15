@@ -75,11 +75,21 @@ VISA_BACKEND = ''
 DEFAULT_STABILIZE_TIME = 10
 
 #: Degaussing defaults. The routine drives the magnet through an alternating,
-#: decaying current sequence to clear remanent magnetisation from the core.
-#: `steps` alternations, each `decay` times the last, dwelling `dwell` seconds.
+#: decaying current sequence to clear remanent magnetisation from the core:
+#: `steps` alternations starting at `start` amps, each `decay` times the last,
+#: dwelling `dwell` seconds.
+#:
+#: `start` is deliberately mild rather than the magnet's full range. Textbook
+#: degaussing begins at saturation, which does the most complete job but puts
+#: the magnet through its hardest duty every time; starting at 1 A treats the
+#: remanence left by ordinary sweeps without that. The trade is real: what a
+#: mild pass cannot reach is remanence from having been driven harder than
+#: `start`, so raise it here after a run that went near the limit.
+#:
 #: The floor exists because the drive is not trustworthy at very small
 #: currents (see EM3000S._current_map), so continuing below it adds time
-#: without adding accuracy.
+#: without adding effect.
+DEFAULT_DEGAUSS_START_A = 1.0
 DEFAULT_DEGAUSS_STEPS = 12
 DEFAULT_DEGAUSS_DECAY = 0.75
 DEFAULT_DEGAUSS_DWELL = 2
@@ -146,7 +156,7 @@ def em7000s_coils():
 
 def degauss_settings():
     """
-    ([Degauss] steps, decay, dwell), each falling back to its default.
+    ([Degauss] start, steps, decay, dwell), each falling back to its default.
 
     Same forgiving stance as stabilize_time(): a malformed value logs a line
     and uses the default rather than refusing to degauss, since the routine is
@@ -167,6 +177,7 @@ def degauss_settings():
             return default
 
     return (
+        _read('start', DEFAULT_DEGAUSS_START_A, float, lambda v: 0 < v <= 10.0),
         _read('steps', DEFAULT_DEGAUSS_STEPS, int, lambda v: 1 <= v <= 100),
         _read('decay', DEFAULT_DEGAUSS_DECAY, float, lambda v: 0.1 < v < 1.0),
         _read('dwell', DEFAULT_DEGAUSS_DWELL, int, lambda v: 0 <= v <= 600),
