@@ -49,8 +49,17 @@ VNAS = {
     'ZNLE': ('VNA', 'VNAController'),
 }
 
+#: Nanovoltmeters. Unlike the magnet and VNA this instrument is optional --
+#: plenty of runs are VNA-only -- so selection is gated by [DVM]/enabled
+#: rather than by a "none" entry here, and the driver is never imported when
+#: that flag is off.
+DVMS = {
+    '2182A': ('K2182A', 'NanovoltmeterController'),
+}
+
 DEFAULT_MAGNET = 'EM3000S'
 DEFAULT_VNA = 'ZNLE'
+DEFAULT_DVM = '2182A'
 
 #: VISA backend for every controller. Empty means the system VISA library,
 #: which on this rig is NI-VISA.
@@ -64,6 +73,22 @@ VISA_BACKEND = ''
 
 #: Seconds to let the rig settle before each VNA read.
 DEFAULT_STABILIZE_TIME = 10
+
+#: Degaussing defaults. The routine drives the magnet through an alternating,
+#: decaying current sequence to clear remanent magnetisation from the core.
+#: `steps` alternations, each `decay` times the last, dwelling `dwell` seconds.
+#: The floor exists because the drive is not trustworthy at very small
+#: currents (see EM3000S._current_map), so continuing below it adds time
+#: without adding accuracy.
+DEFAULT_DEGAUSS_STEPS = 12
+DEFAULT_DEGAUSS_DECAY = 0.75
+DEFAULT_DEGAUSS_DWELL = 2
+DEGAUSS_CURRENT_FLOOR_A = 0.1
+
+#: Nanovoltmeter defaults. Channel is which LEMO input the sample is wired
+#: into; NPLC is integration time in power line cycles.
+DEFAULT_DVM_CHANNEL = 1
+DEFAULT_DVM_NPLC = 5.0
 
 #: The EM7000S energises between 1 and 4 of its coils; the field per amp
 #: depends on the choice, so it is rig configuration, not a run parameter.
@@ -117,6 +142,99 @@ def em7000s_coils():
               f"{EM7000S_COILS_MIN}-{EM7000S_COILS_MAX}); "
               f"using {DEFAULT_EM7000S_COILS}.")
         return DEFAULT_EM7000S_COILS
+
+
+def degauss_settings():
+    """
+    ([Degauss] steps, decay, dwell), each falling back to its default.
+
+    Same forgiving stance as stabilize_time(): a malformed value logs a line
+    and uses the default rather than refusing to degauss, since the routine is
+    most often reached for when the rig is already misbehaving.
+    """
+    config = _read_config()
+
+    def _read(option, default, cast, valid):
+        raw = config.get('Degauss', option, fallback=str(default))
+        try:
+            value = cast(raw)
+            if not valid(value):
+                raise ValueError
+            return value
+        except (TypeError, ValueError):
+            print(f"Bad Degauss {option} '{raw}' in {CONFIG_FILE}; "
+                  f"using {default}.")
+            return default
+
+    return (
+        _read('steps', DEFAULT_DEGAUSS_STEPS, int, lambda v: 1 <= v <= 100),
+        _read('decay', DEFAULT_DEGAUSS_DECAY, float, lambda v: 0.1 < v < 1.0),
+        _read('dwell', DEFAULT_DEGAUSS_DWELL, int, lambda v: 0 <= v <= 600),
+    )
+
+
+def dvm_enabled():
+    """
+    Whether a nanovoltmeter is wired in for this run ([DVM]/enabled).
+
+    This one flag gates everything downstream: detection skips its GPIB pass,
+    the experiment loop never imports the driver, and the plotter draws no
+    voltage axis. It is a per-run fact about how the rig is currently wired,
+    which is why it lives on the Experiment tab rather than Configuration.
+    """
+    raw = _read_config().get('DVM', 'enabled', fallback='0').strip()
+    return raw.lower() in ('1', 'true', 'yes', 'on')
+
+
+def dvm_channel():
+    """Which LEMO input the sample is wired into (1 or 2)."""
+    raw = _read_config().get('DVM', 'channel', fallback=str(DEFAULT_DVM_CHANNEL))
+    try:
+        channel = int(raw)
+        if channel not in (1, 2):
+            raise ValueError
+        return channel
+    except (TypeError, ValueError):
+        print(f"Bad DVM channel '{raw}' in {CONFIG_FILE} (must be 1 or 2); "
+              f"using {DEFAULT_DVM_CHANNEL}.")
+        return DEFAULT_DVM_CHANNEL
+
+
+def dvm_nplc():
+    """Integration time in power line cycles."""
+    raw = _read_config().get('DVM', 'nplc', fallback=str(DEFAULT_DVM_NPLC))
+    try:
+        nplc = float(raw)
+        if not 0.01 <= nplc <= 60.0:
+            raise ValueError
+        return nplc
+    except (TypeError, ValueError):
+        print(f"Bad DVM nplc '{raw}' in {CONFIG_FILE} (must be 0.01-60); "
+              f"using {DEFAULT_DVM_NPLC}.")
+        return DEFAULT_DVM_NPLC
+
+
+def selected_dvm():
+    """Name of the nanovoltmeter chosen in the Configuration tab."""
+    return _selected('dvm', DVMS, DEFAULT_DVM)
+
+
+def get_dvm_controller(announce=True):
+    """
+    Returns the NanovoltmeterController class for the selected DVM, or None
+    when no voltmeter is enabled for this run.
+
+    Returning None rather than raising is deliberate: a VNA-only run is a
+    normal, supported case, and callers read better as `if dvm_class:` than
+    wrapped in a try.
+    """
+    if not dvm_enabled():
+        return None
+    name = selected_dvm()
+    module_name, class_name = DVMS[name]
+    if announce:
+        print(f"Nanovoltmeter driver: {name}")
+    return getattr(importlib.import_module(module_name), class_name)
 
 
 def _selected(option, table, default):

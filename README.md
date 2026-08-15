@@ -12,6 +12,10 @@ This project was built to interface a Holmarc electromagnet with a VNA to do fie
 | --- | --- |
 | R&S ZNLE | working |
 
+| Nanovoltmeter | Status |
+| --- | --- |
+| Keithley 2182A | optional; **SCPI strings not yet confirmed on hardware** |
+
 ### Prerequisites
 - VISA Backend: [NI-VISA](https://www.ni.com/en-us/support/downloads/drivers/download.ni-visa.html) sadly the electromagnet does not work with the `pyvisa-py` backend.
 
@@ -55,6 +59,45 @@ class), so calibrating one never overwrites the other's curve. A calibration run
 each point as it is measured and only replaces the existing curve once it has finished,
 keeping the old one under a timestamped `.bak` — an aborted or failed sweep costs you
 nothing.
+
+### Degaussing
+An iron core keeps a remanent magnetisation, so the field at "0 A" is whatever the last
+run left behind, and an upward sweep does not retrace a downward one. **Degauss** (on
+both the Experiment and Magnet tabs) walks that out by alternating the current's polarity
+while decaying its amplitude, from the magnet's own limit down to a floor. Worth running
+before a measurement series, and after anything that left the magnet at a large one-sided
+current. Tune it under `[Degauss]` in `params.ini` (`steps`, `decay`, `dwell`).
+
+### Nanovoltmeter (optional)
+Tick **Nanovoltmeter connected** on the Experiment tab to record a DC voltage at every
+field point alongside the S-parameters — the electrically-detected FMR channel. That one
+checkbox gates everything: detection skips its GPIB pass without it, the sweep never
+imports the driver, and the plotter draws no voltage axis. Model, input channel and NPLC
+sit on the Configuration tab, greyed out until the box is ticked.
+
+The voltage is written as a comment-prefixed metadata block above each CSV's table rather
+than as a column, because it is one number for the whole field point, not something that
+varies with frequency. A run without the voltmeter produces a file identical to before.
+
+> The 2182A's SCPI strings were written from the documented command structure, not copied
+> from the manual (its text would not extract), so bench-test the driver standalone —
+> `python controllers/K2182A.py` — before trusting a long run.
+
+### Plotting
+**Plotter** opens a window primed with the sweep entered on the main window. Choose a fit
+shape (Lorentzian or Gaussian), how many peaks to find per trace, and how many traces to
+draw, then pick a figure:
+
+- **Full spectrum** — the four S-parameter maps and the S21 gradient figure, as before,
+  with DC voltage overlaid on a right-hand axis where a run recorded it.
+- **P vs H** — traces along the field axis at evenly spaced frequencies, with detected
+  peak positions in the legend.
+- **dP/dH vs H** — the same, differentiated along field.
+
+The two peak figures stay disabled until their settings are valid. Peaks are found with
+`scipy.signal.find_peaks` and then refined by a fit, because the nearest sampled field is
+quantised to the sweep step; on a 5 mT step the fit recovers a known resonance to 0.03 mT.
+Both maxima and minima count, since a resonance in |S21| is an absorption dip.
 
 ### Data Output
 All data is saved in `\data`. `experiment.py` polls the VNA for its data three times, separated by the stabilisation time set in the Configuration tab. What is saved in the final data file is the mean of the three measurements.

@@ -43,7 +43,7 @@ import os
 
 import pyvisa
 
-from devices import VISA_BACKEND
+from devices import VISA_BACKEND, dvm_enabled
 from find_lxi import discover
 
 CONFIG_FILE = 'params.ini'
@@ -185,7 +185,7 @@ def read_env(path):
 
 def write_env(path, values):
     with open(path, 'w') as handle:
-        for key in ('VNA_ID', 'EM_ID'):
+        for key in ('VNA_ID', 'EM_ID', 'DVM_ID'):
             if values.get(key):
                 handle.write(f"{key}={values[key]}\n")
 
@@ -247,10 +247,58 @@ def resolve_vna(enumerated):
     return None
 
 
+def resolve_dvm(enumerated):
+    """
+    The GPIB resource that identifies itself as a 2182, or None.
+
+    Skipped entirely when no voltmeter is enabled for this run -- there is no
+    reason to put traffic on the bus for a sweep that will not read it. When
+    one *is* enabled, failing to find it is a reportable failure rather than
+    a silent skip: the user said a voltmeter is wired in, so its absence is
+    news.
+    """
+    if not dvm_enabled():
+        print("Nanovoltmeter not enabled for this run; skipping the GPIB pass.")
+        return None
+
+    if not enumerated:
+        print("No GPIB resources found, but the voltmeter box is ticked.")
+        print("  Check the GPIB adapter is attached and the 2182A is powered.")
+        return None
+
+    for resource in enumerated:
+        print(f"Checking GPIB resource {resource} ...")
+        try:
+            inst = rm.open_resource(resource, open_timeout=5000)
+            inst.timeout = 5000
+            try:
+                identity = inst.query('*IDN?').strip()
+            finally:
+                inst.close()
+        except Exception as exc:
+            print(f"  no answer: {type(exc).__name__}")
+            continue
+        print(f"  responded: {identity}")
+        if '2182' in identity:
+            return resource
+        print("  not a 2182; ignoring.")
+
+    print("The voltmeter box is ticked but nothing on GPIB identifies as a "
+          "2182.")
+    print("  Check the front panel: GPIB enabled, language set to SCPI (not "
+          "182), and note the address.")
+    return None
+
+
 vna = resolve_vna([i for i in instruments if 'TCPIP' in i])
 if vna:
     found['VNA_ID'] = vna
     print(f"Found VNA at {vna}")
+
+dvm = resolve_dvm([i for i in instruments if 'GPIB' in i])
+if dvm:
+    found['DVM_ID'] = dvm
+    print(f"Found nanovoltmeter at {dvm}")
 
 if not found:
     print("No instruments found. Nothing written to .env.")
@@ -259,7 +307,11 @@ if not found:
               "enumerate them. Check it is installed in this environment.")
     raise SystemExit(1)
 
-for key, label in (('EM_ID', 'Electromagnet'), ('VNA_ID', 'VNA')):
+expected = [('EM_ID', 'Electromagnet'), ('VNA_ID', 'VNA')]
+if dvm_enabled():
+    expected.append(('DVM_ID', 'Nanovoltmeter'))
+
+for key, label in expected:
     if key not in found:
         if previous.get(key):
             print(f"{label} not found; keeping the previous address "
