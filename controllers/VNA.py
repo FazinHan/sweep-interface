@@ -153,6 +153,17 @@ class VNAController:
 
         return freq, s_complex
 
+    #: Trace slot in window 1 for each S-parameter's display binding.
+    #:
+    #: One slot each, because a slot holds exactly one measurement. This used
+    #: to be hardcoded to TRAC1 for all four, so S11 claimed the slot and the
+    #: other three were rejected with "-114: Header suffix out of range" -- the
+    #: suffix being out of range because that trace was already bound. Only the
+    #: display binding failed, never the data (CALC1:PAR:SEL below runs either
+    #: way), so sweeps were correct while the instrument showed one trace and
+    #: an error.
+    TRACE_SLOTS = {'S11': 1, 'S12': 2, 'S21': 3, 'S22': 4}
+
     def _ensure_measurement(self, code, trace_name):
         """
         Create/select a measurement named `trace_name` for S-parameter `code` (e.g., 'S21').
@@ -173,11 +184,12 @@ class VNAController:
                 break
 
         if not exists:
-            # Define and bind the measurement to a (visible) trace if needed
+            # Define the measurement, then bind it to its own trace slot so it
+            # is visible on the instrument. An unknown code falls back to slot
+            # 1: displaying it matters less than not guessing a slot number.
             v.write(f"CALC1:PAR:DEF '{trace_name}',{code}")
-            # Optional: create a new trace window binding (if none exists for this name)
-            # Many VNAs auto-bind, but this is safe:
-            v.write(f"DISP:WIND1:TRAC1:FEED '{trace_name}'")
+            slot = self.TRACE_SLOTS.get(code.upper(), 1)
+            v.write(f"DISP:WIND1:TRAC{slot}:FEED '{trace_name}'")
 
         # Select it so CALC1:DATA? applies to this measurement
         v.write(f"CALC1:PAR:SEL '{trace_name}'")
