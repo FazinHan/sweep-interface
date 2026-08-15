@@ -72,9 +72,15 @@ while decaying its amplitude:
 
 It starts mild — 1 A, not the magnet's full range — so a routine degauss is not the
 magnet's hardest duty of the day. The trade is that it cannot clear remanence left by
-being driven *harder* than the starting amplitude, so raise `[Degauss]/start` after a run
-that went near the limit. Tune `start`, `steps`, `decay` and `dwell` under `[Degauss]` in
-`params.ini`; the start is clamped to the selected magnet's own current limit.
+being driven *harder* than the starting amplitude. Tune `start`, `steps`, `decay` and
+`dwell` under `[Degauss]` in `params.ini`; the start is clamped to the selected magnet's
+own current limit.
+
+For that harder case, **Degauss (full strength)** on the Configuration tab starts from the
+selected magnet's limit instead — 4.0 A on the EM3000S, 4.2 A on the EM7000S, taken from
+the driver so neither is named in the routine. Use it after a run that drove the magnet
+hard. **Keep magnetic material — tools, watches, phones, cards, storage media — clear of
+the magnet before running it**; hover the `?` beside the button for the full warning.
 
 ### Nanovoltmeter (optional)
 Tick **Nanovoltmeter connected** on the Experiment tab to record a DC voltage at every

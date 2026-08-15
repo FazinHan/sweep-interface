@@ -29,6 +29,8 @@ Run it before a measurement series, and after anything that has left the
 magnet at a large one-sided current. It energises the magnet, so it is
 interruptible: the ABORT button terminates it and runs abort_all.py.
 """
+import sys
+
 from devices import (DEGAUSS_CURRENT_FLOOR_A, degauss_settings,
                      get_magnet_controller)
 MagnetController = get_magnet_controller()   # selected in the Configuration tab
@@ -37,16 +39,28 @@ from progress import countdown
 
 START, STEPS, DECAY, DWELL = degauss_settings()
 
+# `full` starts from the magnet's own current limit instead of the mild
+# configured start. Whichever magnet is selected supplies that limit, so this
+# is 4.0 A on an EM3000S and 4.2 A on an EM7000S without either being named
+# here.
+FULL_STRENGTH = len(sys.argv) > 1 and sys.argv[1].strip().lower() == 'full'
+
 magnet = MagnetController()
 magnet.connect()
 
-# Never ask for more than the selected magnet can take, whatever the config
-# says -- the drivers assert on this anyway, and failing here is tidier than
-# failing part-way through the sequence with the core left magnetised.
-start = min(float(START), float(magnet.max_current))
-if start < START:
-    print(f"Requested start {START} A exceeds this magnet's "
-          f"{magnet.max_current} A limit; starting at {start} A.")
+if FULL_STRENGTH:
+    start = float(magnet.max_current)
+    print("FULL STRENGTH degauss: starting at this magnet's limit.")
+    print("Keep magnetic material away from the magnet.")
+else:
+    # Never ask for more than the selected magnet can take, whatever the
+    # config says -- the drivers assert on this anyway, and failing here is
+    # tidier than failing part-way through the sequence with the core left
+    # magnetised.
+    start = min(float(START), float(magnet.max_current))
+    if start < START:
+        print(f"Requested start {START} A exceeds this magnet's "
+              f"{magnet.max_current} A limit; starting at {start} A.")
 
 print(f"Degaussing: up to {STEPS} alternations from {start:.2f} A, "
       f"decaying x{DECAY}, {DWELL}s dwell, floor {DEGAUSS_CURRENT_FLOOR_A} A.")

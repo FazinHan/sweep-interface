@@ -470,12 +470,23 @@ def on_stop_magnet_click():
 
 def on_degauss_click():
     """
-    Runs the degauss routine. Offered on both the Experiment and Magnet tabs
+    Runs the mild degauss. Offered on both the Experiment and Magnet tabs
     because it is wanted in two different moments: before starting a series,
     and after a manual set has left the core somewhere awkward.
     """
     save_config()
     schedule_script(DEGAUSS_SCRIPT)
+
+def on_full_degauss_click():
+    """
+    Runs the degauss from the selected magnet's full current limit.
+
+    Kept on the Configuration tab, away from the per-run controls, because it
+    is the occasional deep clean rather than routine housekeeping: it drives
+    the magnet to full field in both directions.
+    """
+    save_config()
+    schedule_script(DEGAUSS_SCRIPT, 'full')
 
 def apply_magnet_capabilities():
     """
@@ -854,6 +865,28 @@ ttk.Label(cfg_inputs, text="Saved to params.ini; every controller\n"
                                                   sticky='w', pady=(15, 0))
 
 ttk.Button(cfg_buttons, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)
+
+# Full-strength degauss, with its warning attached. The button and its hint
+# share a row so the '?' cannot drift away from what it is warning about.
+full_degauss_row = ttk.Frame(cfg_buttons)
+full_degauss_row.pack(fill=tk.X, pady=5)
+ttk.Button(full_degauss_row, text="Degauss (full strength)",
+           command=on_full_degauss_click).pack(side=tk.LEFT, fill=tk.X, expand=True)
+full_degauss_hint = ttk.Label(full_degauss_row, text=" ? ", relief='raised',
+                              foreground='blue', cursor='question_arrow')
+full_degauss_hint.pack(side=tk.LEFT, padx=(6, 0))
+Tooltip(full_degauss_hint,
+        "KEEP MAGNETIC MATERIAL AWAY FROM THE MAGNET BEFORE STARTING.\n\n"
+        "Tools, screwdrivers, watches, phones, bank cards and magnetic "
+        "storage media should all be clear of the bore and the surrounding "
+        "bench: this drives the core to its full field in both directions, "
+        "repeatedly.\n\n"
+        "Starts from the selected magnet's own current limit (4.0 A on the "
+        "EM3000S, 4.2 A on the EM7000S) rather than the mild 1 A pass behind "
+        "the Degauss buttons on the Experiment and Magnet tabs. Use it after "
+        "a run that drove the magnet hard, since a mild pass cannot undo "
+        "remanence left by larger loops than it retraces.")
+
 ttk.Separator(cfg_buttons, orient='horizontal').pack(fill='x', pady=10)
 ttk.Button(cfg_buttons, text="ABORT", command=on_abort_click, style='Danger.TButton').pack(fill=tk.X, pady=5)
 
