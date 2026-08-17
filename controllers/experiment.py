@@ -1,4 +1,5 @@
-from devices import (get_magnet_controller, get_vna_controller,
+from devices import (dvm_channel, dvm_nplc, get_dvm_controller,
+                     get_magnet_controller, get_vna_controller,
                      require_field_support, stabilize_time)
 from progress import countdown
 
@@ -55,12 +56,34 @@ print("Connecting to VNA and Magnet Controllers...")
 vna = VNAController()
 magnet = MagnetController()
 
+# Optional third instrument. get_dvm_controller() returns None when the
+# Experiment tab's voltmeter box is unticked, and the driver is never
+# imported in that case.
+DVMController = get_dvm_controller()
+dvm = None
+if DVMController is not None:
+    dvm = DVMController(channel=dvm_channel(), nplc=dvm_nplc())
+
 magnet.connect()
 vna.connect()
+if dvm is not None:
+    dvm.connect()
+    # Null once here, before the sweep and with the RF drive off, so standing
+    # thermal EMFs are cancelled. Doing this with the drive on would null away
+    # the signal itself.
+    print("Zeroing nanovoltmeter (RF drive should be OFF for this)...")
+    dvm.zero()
 
 print("Sweeping...")
 
-currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
+# Stop half a step past `high` rather than a full step. arange excludes its
+# stop, so `+ STEP` is meant to make `high` inclusive -- but when floating
+# point puts the computed stop a hair above high + step, one extra point slips
+# in beyond the requested range (0 -> 0.2 step 0.1 produced a 0.3 point). That
+# drives the magnet past what was asked for, and if `high` is near the current
+# limit the extra point trips the driver's range assert and loses the run.
+# Half a step is unambiguous: it includes `high` and cannot reach high + step.
+currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP / 2, STEP)
 if DOWN:
     currs = currs[::-1]  # Reverse the array if sweeping down
 
@@ -71,12 +94,18 @@ for curr in currs:
     else:
         curr_return = magnet.set_current(curr)
     
+    # The DC voltage is read inside the same stabilize/read block as the
+    # S-parameters, so both channels see identical settling conditions.
+    voltages = []
+
     ### EXPERIMENT 1
     countdown(STABILIZE_TIME, "  stabilizing 1/3")  # Wait for the magnet to stabilize
     freq, s11_1 = vna.read_s11()
     _, s12_1 = vna.read_s12()
     _, s21_1 = vna.read_s21()
     _, s22_1 = vna.read_s22()
+    if dvm is not None:
+        voltages.append(dvm.read_voltage())
 
     ### EXPERIMENT 2
     countdown(STABILIZE_TIME, "  stabilizing 2/3")  # Wait for the magnet to stabilize
@@ -84,6 +113,8 @@ for curr in currs:
     _, s12_2 = vna.read_s12()
     _, s21_2 = vna.read_s21()
     _, s22_2 = vna.read_s22()
+    if dvm is not None:
+        voltages.append(dvm.read_voltage())
 
     ### EXPERIMENT 3
     countdown(STABILIZE_TIME, "  stabilizing 3/3")  # Wait for the magnet to stabilize
@@ -91,6 +122,19 @@ for curr in currs:
     _, s12_3 = vna.read_s12()
     _, s21_3 = vna.read_s21()
     _, s22_3 = vna.read_s22()
+    if dvm is not None:
+        voltages.append(dvm.read_voltage())
+
+    # Average the repeats the same way the S-parameters are, skipping any
+    # read that failed rather than letting one None poison the mean.
+    good = [v for v in voltages if v is not None]
+    voltage = sum(good) / len(good) if good else None
+    if dvm is not None:
+        if voltage is None:
+            print("  WARNING: no usable voltage reading at this point.")
+        else:
+            print(f"  DC voltage: {voltage:.9g} V "
+                  f"(mean of {len(good)}/{len(voltages)})")
 
     ### AVERAGE
     s11 = (s11_1 + s11_2 + s11_3)/3
@@ -118,13 +162,29 @@ for curr in currs:
           'S22 Phase': np.angle(s22, deg=True)
           }
     df = pd.DataFrame(df)
-    df.to_csv(os.path.join(subdir, f"{curr_return:.2f}{UNIT}.csv"), index=False)
+
+    # Scalar-per-point values go in a comment-prefixed metadata block above
+    # the frequency-indexed table, not as a column repeated down every row --
+    # the voltage is one number for this whole field point, and giving it a
+    # column would misrepresent it as varying with frequency. Readers skip
+    # these lines with comment='#', so a VNA-only file is byte-identical to
+    # what this wrote before the voltmeter existed.
+    path = os.path.join(subdir, f"{curr_return:.2f}{UNIT}.csv")
+    with open(path, 'w', newline='') as handle:
+        if voltage is not None:
+            handle.write(f"# Field ({UNIT}): {curr_return:.6f}\n")
+            handle.write(f"# DC Voltage (V): {voltage:.9e}\n")
+        df.to_csv(handle, index=False)
 
 print("Stopping magnet...")
 magnet.stop_and_query_field()
 
 magnet.disconnect()
 vna.close()
+if dvm is not None:
+    # Nothing to walk back here: the DVM is read-only and holds no energised
+    # state, which is why the abort path ignores it entirely.
+    dvm.close()
 
 print("Data saved.\n")
 

@@ -24,6 +24,7 @@ ABORT_SCRIPT = os.path.join('controllers', 'abort_all.py')
 SET_MAGNET_SCRIPT = os.path.join('controllers', 'set_magnet.py')
 PROBE_MAGNET_SCRIPT = os.path.join('controllers', 'probe_magnet.py')
 STOP_MAGNET_SCRIPT = os.path.join('controllers', 'stop_magnet.py')
+DEGAUSS_SCRIPT = os.path.join('controllers', 'degauss.py')
 
 # --- Global State for Async Control ---
 # We need a reference to the current process to kill it later
@@ -55,16 +56,20 @@ async def _pump_stream(stream, prefix=""):
         if decoded_line:
             msg_queue.put(("print", f"{prefix}{decoded_line}"))
 
-async def run_script_async(script_name):
+async def run_script_async(script_name, *args):
     """
     Async coroutine to run the subprocess.
     It reads output line-by-line and pushes it to the GUI queue.
+
+    Extra positional args are passed through to the script, which is how the
+    Plotter window selects which figure to draw.
     """
     global current_process, running, abort_requested
 
     abort_requested = False
-    msg_queue.put(("status", f"Running {script_name}..."))
-    msg_queue.put(("print", f"Starting subprocess: python {script_name}"))
+    shown = " ".join([script_name, *args])
+    msg_queue.put(("status", f"Running {shown}..."))
+    msg_queue.put(("print", f"Starting subprocess: python {shown}"))
 
     try:
         # Create the subprocess asynchronously
@@ -75,7 +80,7 @@ async def run_script_async(script_name):
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         current_process = await asyncio.create_subprocess_exec(
-            sys.executable, "-u", script_name,
+            sys.executable, "-u", script_name, *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
@@ -112,7 +117,7 @@ async def run_script_async(script_name):
         current_process = None
         running = False
 
-def schedule_script(script_name):
+def schedule_script(script_name, *args):
     """Helper to schedule the async task from the synchronous GUI."""
     global running
     if running:
@@ -121,7 +126,7 @@ def schedule_script(script_name):
 
     running = True
     # Schedule the coroutine in the background loop
-    asyncio.run_coroutine_threadsafe(run_script_async(script_name), loop)
+    asyncio.run_coroutine_threadsafe(run_script_async(script_name, *args), loop)
 
 
 # --- Abort Functionality ---
@@ -233,6 +238,24 @@ def load_config():
                                      fallback=str(devices.DEFAULT_STABILIZE_TIME)))
         em7000s_coils_var.set(config.get('EM7000S', 'coils',
                                          fallback=str(devices.DEFAULT_EM7000S_COILS)))
+        dvm_enabled_var.set(int(config.get('DVM', 'enabled', fallback='0')))
+        dvm_model_var.set(config.get('DVM', 'model', fallback=devices.DEFAULT_DVM))
+        dvm_channel_var.set(config.get('DVM', 'channel',
+                                       fallback=str(devices.DEFAULT_DVM_CHANNEL)))
+        dvm_nplc_var.set(config.get('DVM', 'nplc',
+                                    fallback=str(devices.DEFAULT_DVM_NPLC)))
+        # Plotter's own target sweep. No Experiment fallback: an empty box is
+        # the honest state before the user has said what to plot.
+        plot_low_var.set(config.get('Plotter', 'low', fallback=''))
+        plot_high_var.set(config.get('Plotter', 'high', fallback=''))
+        plot_step_var.set(config.get('Plotter', 'step', fallback=''))
+        plot_unit_var.set(config.get('Plotter', 'unit', fallback='A'))
+        plot_sweep_down_var.set(int(config.get('Plotter', 'sweep_down',
+                                               fallback='0')))
+        plot_shape_var.set(config.get('Plotter', 'fit_shape', fallback=''))
+        plot_npeaks_var.set(config.get('Plotter', 'n_peaks', fallback=''))
+        plot_ntraces_var.set(config.get('Plotter', 'n_traces', fallback=''))
+        plot_sparam_var.set(config.get('Plotter', 's_param', fallback='S21'))
         status_var.set("Config loaded successfully.")
     except Exception as e:
         status_var.set("Error reading config file.")
@@ -247,6 +270,8 @@ def save_config():
     if 'Devices' not in config: config['Devices'] = {}
     if 'Settings' not in config: config['Settings'] = {}
     if 'EM7000S' not in config: config['EM7000S'] = {}
+    if 'DVM' not in config: config['DVM'] = {}
+    if 'Plotter' not in config: config['Plotter'] = {}
     try:
         config['Experiment']['low'] = exp_low_var.get()
         config['Experiment']['high'] = exp_high_var.get()
@@ -261,6 +286,19 @@ def save_config():
         # An empty box must not reach the controllers as int('').
         config['Settings']['stabilize_time'] = stabilize_var.get() or str(devices.DEFAULT_STABILIZE_TIME)
         config['EM7000S']['coils'] = em7000s_coils_var.get() or str(devices.DEFAULT_EM7000S_COILS)
+        config['DVM']['enabled'] = str(dvm_enabled_var.get())
+        config['DVM']['model'] = dvm_model_var.get()
+        config['DVM']['channel'] = dvm_channel_var.get() or str(devices.DEFAULT_DVM_CHANNEL)
+        config['DVM']['nplc'] = dvm_nplc_var.get() or str(devices.DEFAULT_DVM_NPLC)
+        config['Plotter']['low'] = plot_low_var.get()
+        config['Plotter']['high'] = plot_high_var.get()
+        config['Plotter']['step'] = plot_step_var.get()
+        config['Plotter']['unit'] = plot_unit_var.get()
+        config['Plotter']['sweep_down'] = str(plot_sweep_down_var.get())
+        config['Plotter']['fit_shape'] = plot_shape_var.get()
+        config['Plotter']['n_peaks'] = plot_npeaks_var.get() or '1'
+        config['Plotter']['n_traces'] = plot_ntraces_var.get() or '3'
+        config['Plotter']['s_param'] = plot_sparam_var.get()
         with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)
         # status_var.set("Parameters saved.") # Optional: don't overwrite "Running..." status
@@ -273,12 +311,202 @@ def save_config():
 def on_detect_click():
     schedule_script(DETECT_SCRIPT)
 
-def on_plot_click():
-    if not (exp_low_var.get() and exp_high_var.get() and exp_step_var.get()):
-        status_var.set("Error: All experiment fields must be filled.")
+def open_plotter_window():
+    """
+    Opens the Plotter window, its sweep boxes seeded from the Experiment tab.
+
+    Seeded, not linked: the values are copied in each time the window opens,
+    and are then the Plotter's own to edit. That covers the common case -- you
+    have just run a sweep and want to look at it -- without the window
+    silently tracking the Experiment tab afterwards, which would mean setting
+    up the next measurement repointed the Plotter mid-session at data that may
+    not exist.
+
+    The consequence to know about: editing these boxes to look at an older run
+    is not remembered across a close-and-reopen, because reopening seeds them
+    again. The fit settings below are not seeded and do persist.
+    """
+    plot_low_var.set(exp_low_var.get())
+    plot_high_var.set(exp_high_var.get())
+    plot_step_var.set(exp_step_var.get())
+    plot_unit_var.set(exp_unit_var.get())
+    plot_sweep_down_var.set(exp_sweep_down_var.get())
+
+    window = tk.Toplevel(root)
+    window.title("Plotter")
+    window.transient(root)
+
+    frame = ttk.Frame(window, padding=12)
+    frame.pack(fill=tk.BOTH, expand=True)
+
+    # --- which data ---
+    ttk.Label(frame, text="Data to plot", font=('Helvetica', 9, 'bold')).grid(
+        row=0, column=0, columnspan=3, sticky='w')
+    ttk.Label(frame, text="The sweep that names the data folder. Copied from\n"
+                          "the Experiment tab; edit to plot a different run.",
+              foreground='grey', justify='left').grid(row=1, column=0,
+                                                      columnspan=3, sticky='w',
+                                                      pady=(0, 6))
+
+    ttk.Label(frame, text="Low:").grid(row=2, column=0, sticky='w', pady=3)
+    ttk.Entry(frame, textvariable=plot_low_var, width=12, validate='key',
+              validatecommand=vcmd_float).grid(row=2, column=1, sticky='w')
+
+    ttk.Label(frame, text="High:").grid(row=3, column=0, sticky='w', pady=3)
+    ttk.Entry(frame, textvariable=plot_high_var, width=12, validate='key',
+              validatecommand=vcmd_float).grid(row=3, column=1, sticky='w')
+
+    ttk.Label(frame, text="Step:").grid(row=4, column=0, sticky='w', pady=3)
+    ttk.Entry(frame, textvariable=plot_step_var, width=12, validate='key',
+              validatecommand=vcmd_float).grid(row=4, column=1, sticky='w')
+
+    plot_unit_frame = ttk.Frame(frame)
+    plot_unit_frame.grid(row=5, column=0, columnspan=3, sticky='w', pady=4)
+    ttk.Radiobutton(plot_unit_frame, text="A", variable=plot_unit_var,
+                    value="A").pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Radiobutton(plot_unit_frame, text="mT", variable=plot_unit_var,
+                    value="mT").pack(side=tk.LEFT)
+    ttk.Checkbutton(plot_unit_frame, text="Sweep down",
+                    variable=plot_sweep_down_var).pack(side=tk.LEFT, padx=(16, 0))
+
+    ttk.Separator(frame, orient='horizontal').grid(row=6, column=0, columnspan=3,
+                                                   sticky='ew', pady=10)
+
+    # --- peak detection ---
+    ttk.Label(frame, text="Peak detection", font=('Helvetica', 9, 'bold')).grid(
+        row=7, column=0, columnspan=3, sticky='w', pady=(0, 4))
+
+    ttk.Label(frame, text="Fit shape:").grid(row=8, column=0, sticky='w', pady=4)
+    shape_frame = ttk.Frame(frame)
+    shape_frame.grid(row=8, column=1, columnspan=2, sticky='w')
+    ttk.Radiobutton(shape_frame, text="Lorentzian", value='lorentzian',
+                    variable=plot_shape_var,
+                    command=_refresh_plot_buttons).pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Radiobutton(shape_frame, text="Gaussian", value='gaussian',
+                    variable=plot_shape_var,
+                    command=_refresh_plot_buttons).pack(side=tk.LEFT)
+
+    ttk.Label(frame, text="Peaks per trace (N):").grid(row=9, column=0,
+                                                       sticky='w', pady=4)
+    ttk.Entry(frame, textvariable=plot_npeaks_var, width=10, validate='key',
+              validatecommand=vcmd_int).grid(row=9, column=1, sticky='w')
+
+    ttk.Label(frame, text="Traces to show:").grid(row=10, column=0,
+                                                  sticky='w', pady=4)
+    ttk.Entry(frame, textvariable=plot_ntraces_var, width=10, validate='key',
+              validatecommand=vcmd_int).grid(row=10, column=1, sticky='w')
+
+    ttk.Label(frame, text="S-parameter:").grid(row=11, column=0, sticky='w', pady=4)
+    ttk.Combobox(frame, textvariable=plot_sparam_var,
+                 values=['S11', 'S12', 'S21', 'S22'], state='readonly',
+                 width=8).grid(row=11, column=1, sticky='w')
+
+    ttk.Separator(frame, orient='horizontal').grid(row=12, column=0, columnspan=3,
+                                                   sticky='ew', pady=10)
+
+    # --- plot buttons ---
+    global plot_full_button, plot_pvh_button, plot_dpdh_button
+    plot_full_button = ttk.Button(frame, text="Full spectrum",
+                                  command=lambda: _run_plot('full'))
+    plot_full_button.grid(row=13, column=0, sticky='ew', padx=2)
+    plot_pvh_button = ttk.Button(frame, text="P vs H",
+                                 command=lambda: _run_plot('pvh'))
+    plot_pvh_button.grid(row=13, column=1, sticky='ew', padx=2)
+    plot_dpdh_button = ttk.Button(frame, text="dP/dH vs H",
+                                  command=lambda: _run_plot('dpdh'))
+    plot_dpdh_button.grid(row=13, column=2, sticky='ew', padx=2)
+
+    global plot_hint_label
+    plot_hint_label = ttk.Label(frame, text="", foreground='grey',
+                                wraplength=400, justify='left')
+    plot_hint_label.grid(row=14, column=0, columnspan=3, sticky='w', pady=(10, 0))
+
+    # Re-check whenever a field changes, so the buttons track validity live.
+    for var in (plot_low_var, plot_high_var, plot_step_var,
+                plot_npeaks_var, plot_ntraces_var):
+        var.trace_add('write', lambda *_: _refresh_plot_buttons())
+    window.protocol("WM_DELETE_WINDOW",
+                    lambda: (_forget_plot_buttons(), window.destroy()))
+    _refresh_plot_buttons()
+
+
+def _plot_target_problem():
+    """
+    Why no plot can be drawn at all, or None when the target is complete.
+
+    The sweep values name the data directory, so without them there is
+    nothing to read -- this gates every button, including Full spectrum.
+    """
+    for label, var in (("Low", plot_low_var), ("High", plot_high_var),
+                       ("Step", plot_step_var)):
+        text = var.get().strip()
+        if not text or text in ('-', '.'):
+            return f"{label} is required to identify the data."
+        try:
+            float(text)
+        except ValueError:
+            return f"{label} must be a number."
+    if float(plot_step_var.get()) == 0:
+        return "Step cannot be zero."
+    return None
+
+
+def _plot_settings_problem():
+    """Why the peak-based buttons are unusable, or None when they are fine."""
+    if plot_shape_var.get() not in ('lorentzian', 'gaussian'):
+        return "Choose a fit shape."
+    for label, var in (("Peaks per trace (N)", plot_npeaks_var),
+                       ("Traces to show", plot_ntraces_var)):
+        text = var.get().strip()
+        if not text:
+            return f"{label} is required."
+        if not text.isdigit() or int(text) < 1:
+            return f"{label} must be a whole number of at least 1."
+    return None
+
+
+def _refresh_plot_buttons():
+    """
+    Tracks the two tiers of requirement.
+
+    Every button needs the target sweep, since that is what locates the data.
+    Only the peak-based buttons additionally need the fit settings -- 'Full
+    spectrum' consumes none of those, so gating it behind a peak count it
+    never reads would block a working feature.
+    """
+    if plot_pvh_button is None:
+        return
+
+    target = _plot_target_problem()
+    settings = _plot_settings_problem()
+
+    plot_full_button.configure(state='disabled' if target else 'normal')
+    peak_state = 'disabled' if (target or settings) else 'normal'
+    plot_pvh_button.configure(state=peak_state)
+    plot_dpdh_button.configure(state=peak_state)
+
+    if plot_hint_label is not None:
+        plot_hint_label.configure(
+            text=target or settings or
+            "Peak positions appear in the plot legend.")
+
+
+def _forget_plot_buttons():
+    global plot_full_button, plot_pvh_button, plot_dpdh_button, plot_hint_label
+    plot_full_button = plot_pvh_button = plot_dpdh_button = None
+    plot_hint_label = None
+
+
+def _run_plot(mode):
+    """Saves the Plotter settings, then spawns the plotter in that mode."""
+    problem = _plot_target_problem()
+    if not problem and mode in ('pvh', 'dpdh'):
+        problem = _plot_settings_problem()
+    if problem:
+        status_var.set(f"Error: {problem}")
         return
     save_config()
-    schedule_script(PLOTTER_SCRIPT)
+    schedule_script(PLOTTER_SCRIPT, mode)
 
 def on_start_exp_click():
     if not (exp_low_var.get() and exp_high_var.get() and exp_step_var.get()):
@@ -320,6 +548,26 @@ def on_probe_magnet_click():
 
 def on_stop_magnet_click():
     schedule_script(STOP_MAGNET_SCRIPT)
+
+def on_degauss_click():
+    """
+    Runs the mild degauss. Offered on both the Experiment and Magnet tabs
+    because it is wanted in two different moments: before starting a series,
+    and after a manual set has left the core somewhere awkward.
+    """
+    save_config()
+    schedule_script(DEGAUSS_SCRIPT)
+
+def on_full_degauss_click():
+    """
+    Runs the degauss from the selected magnet's full current limit.
+
+    Kept on the Configuration tab, away from the per-run controls, because it
+    is the occasional deep clean rather than routine housekeeping: it drives
+    the magnet to full field in both directions.
+    """
+    save_config()
+    schedule_script(DEGAUSS_SCRIPT, 'full')
 
 def apply_magnet_capabilities():
     """
@@ -363,6 +611,33 @@ def on_device_change(event=None):
     magnet = dev_magnet_var.get()
     limits = "" if devices.magnet_supports_field(magnet) else " (Amps only)"
     status_var.set(f"Devices: {magnet}{limits} + {dev_vna_var.get()}")
+
+def on_dvm_toggle():
+    """
+    The voltmeter checkbox is the single source of truth for whether a DVM is
+    in play, so the Configuration tab's DVM controls follow it.
+    """
+    apply_dvm_state()
+    save_config()
+    status_var.set("Nanovoltmeter enabled." if dvm_enabled_var.get()
+                   else "Nanovoltmeter disabled; runs will be VNA-only.")
+
+
+def apply_dvm_state():
+    """Greys out the DVM settings when no voltmeter is declared."""
+    if dvm_model_combo is None:
+        return
+    enabled = bool(dvm_enabled_var.get())
+    dvm_model_combo.configure(state='readonly' if enabled else 'disabled')
+    dvm_channel_combo.configure(state='readonly' if enabled else 'disabled')
+    dvm_nplc_entry.configure(state='normal' if enabled else 'disabled')
+
+
+def on_dvm_setting_change(event=None):
+    save_config()
+    status_var.set(f"Nanovoltmeter: channel {dvm_channel_var.get()}, "
+                   f"{dvm_nplc_var.get()} NPLC")
+
 
 def on_coils_change():
     """Coil count is read by the controllers at process start, like the device
@@ -451,6 +726,37 @@ dev_magnet_var = tk.StringVar(value=devices.DEFAULT_MAGNET)
 dev_vna_var = tk.StringVar(value=devices.DEFAULT_VNA)
 stabilize_var = tk.StringVar(value=str(devices.DEFAULT_STABILIZE_TIME))
 em7000s_coils_var = tk.StringVar(value=str(devices.DEFAULT_EM7000S_COILS))
+dvm_enabled_var = tk.IntVar(value=0)
+dvm_model_var = tk.StringVar(value=devices.DEFAULT_DVM)
+dvm_channel_var = tk.StringVar(value=str(devices.DEFAULT_DVM_CHANNEL))
+dvm_nplc_var = tk.StringVar(value=str(devices.DEFAULT_DVM_NPLC))
+
+# Plotter window state. Held here rather than inside the window so a reopened
+# window comes back with the same settings, and so save_config can reach them.
+#
+# The sweep that identifies the data is the Plotter's own, deliberately not
+# read from the Experiment tab. Those boxes describe the run you are about to
+# take; plotting is usually about a run you took earlier, and quietly following
+# the Experiment tab meant editing it for the next measurement silently
+# repointed the Plotter at data that may not exist.
+plot_low_var = tk.StringVar(value='')
+plot_high_var = tk.StringVar(value='')
+plot_step_var = tk.StringVar(value='')
+plot_unit_var = tk.StringVar(value='A')
+plot_sweep_down_var = tk.IntVar(value=0)
+plot_shape_var = tk.StringVar(value='')      # empty until the user chooses
+plot_npeaks_var = tk.StringVar(value='')
+plot_ntraces_var = tk.StringVar(value='')
+plot_sparam_var = tk.StringVar(value='S21')
+plot_full_button = None
+plot_pvh_button = None
+plot_dpdh_button = None
+plot_hint_label = None
+
+# Assigned when the Configuration tab is built, below.
+dvm_model_combo = None
+dvm_channel_combo = None
+dvm_nplc_entry = None
 
 # --- Tabbed Interface ---
 tab_control = ttk.Notebook(root)
@@ -483,9 +789,18 @@ exp_mt_radio.pack(side=tk.LEFT, padx=5)
 
 ttk.Checkbutton(exp_inputs, text="Sweep down", variable=exp_sweep_down_var).grid(row=4, column=0, columnspan=2, sticky='w', pady=10)
 
+# Per-run fact about how the rig is wired, which is why it lives here rather
+# than in Configuration. It gates detection, the sweep, and the plotter.
+ttk.Checkbutton(exp_inputs, text="Nanovoltmeter connected",
+                variable=dvm_enabled_var,
+                command=lambda: on_dvm_toggle()).grid(row=5, column=0,
+                                                      columnspan=2, sticky='w',
+                                                      pady=(0, 10))
+
 # Buttons
 ttk.Button(exp_buttons, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)
-ttk.Button(exp_buttons, text="Plot", command=on_plot_click).pack(fill=tk.X, pady=5)
+ttk.Button(exp_buttons, text="Plotter", command=open_plotter_window).pack(fill=tk.X, pady=5)
+ttk.Button(exp_buttons, text="Degauss", command=on_degauss_click).pack(fill=tk.X, pady=5)
 ttk.Button(exp_buttons, text="START", command=on_start_exp_click, style='Accent.TButton').pack(fill=tk.X, pady=5)
 
 # ABORT BUTTON (New)
@@ -539,6 +854,7 @@ ttk.Button(mag_buttons, text="Probe Field", command=on_probe_magnet_click).pack(
 ttk.Entry(mag_buttons, textvariable=mag_probe_var, state='readonly', justify='center').pack(fill=tk.X, pady=5)
 
 ttk.Separator(mag_buttons, orient='horizontal').pack(fill='x', pady=10)
+ttk.Button(mag_buttons, text="Degauss", command=on_degauss_click).pack(fill=tk.X, pady=5)
 ttk.Button(mag_buttons, text="Stop Magnet", command=on_stop_magnet_click, style='Danger.TButton').pack(fill=tk.X, pady=5)
 
 # Configuration Tab
@@ -600,12 +916,69 @@ Tooltip(coils_hint,
         "rig: change it and any field calibration taken at a different "
         "coil count no longer applies.")
 
+ttk.Separator(cfg_inputs, orient='horizontal').grid(row=4, column=0, columnspan=3,
+                                                    sticky='ew', pady=10)
+
+# Nanovoltmeter settings. Enabled by the Experiment tab's checkbox, which is
+# the one place the user declares whether a voltmeter is wired in at all.
+ttk.Label(cfg_inputs, text="Nanovoltmeter:").grid(row=5, column=0, sticky='w', pady=5)
+dvm_model_combo = ttk.Combobox(cfg_inputs, textvariable=dvm_model_var,
+                               values=list(devices.DVMS), state='readonly',
+                               width=18)
+dvm_model_combo.grid(row=5, column=1, sticky='ew', padx=(10, 0))
+dvm_model_combo.bind('<<ComboboxSelected>>', on_dvm_setting_change)
+
+ttk.Label(cfg_inputs, text="DVM channel:").grid(row=6, column=0, sticky='w', pady=5)
+dvm_channel_combo = ttk.Combobox(cfg_inputs, textvariable=dvm_channel_var,
+                                 values=['1', '2'], state='readonly', width=18)
+dvm_channel_combo.grid(row=6, column=1, sticky='ew', padx=(10, 0))
+dvm_channel_combo.bind('<<ComboboxSelected>>', on_dvm_setting_change)
+
+ttk.Label(cfg_inputs, text="DVM NPLC:").grid(row=7, column=0, sticky='w', pady=5)
+dvm_nplc_entry = ttk.Entry(cfg_inputs, textvariable=dvm_nplc_var, width=18,
+                           validate='key', validatecommand=vcmd_float)
+dvm_nplc_entry.grid(row=7, column=1, sticky='ew', padx=(10, 0))
+dvm_nplc_entry.bind('<FocusOut>', on_dvm_setting_change)
+dvm_nplc_entry.bind('<Return>', on_dvm_setting_change)
+
+dvm_hint = ttk.Label(cfg_inputs, text=" ? ", relief='raised',
+                     foreground='blue', cursor='question_arrow')
+dvm_hint.grid(row=7, column=2, sticky='w', padx=(6, 0))
+Tooltip(dvm_hint,
+        "Channel is which LEMO input the sample is wired into. NPLC is the "
+        "integration time in power line cycles - higher is slower and "
+        "quieter. A sweep is gated by the magnet settle time anyway, so "
+        "there is rarely a reason to rush it. Enable the voltmeter with the "
+        "checkbox on the Experiment tab.")
+
 ttk.Label(cfg_inputs, text="Saved to params.ini; every controller\n"
                           "reads it when it starts.",
-          justify='left', foreground='grey').grid(row=4, column=0, columnspan=3,
+          justify='left', foreground='grey').grid(row=8, column=0, columnspan=3,
                                                   sticky='w', pady=(15, 0))
 
 ttk.Button(cfg_buttons, text="Detect Insts!", command=on_detect_click).pack(fill=tk.X, pady=5)
+
+# Full-strength degauss, with its warning attached. The button and its hint
+# share a row so the '?' cannot drift away from what it is warning about.
+full_degauss_row = ttk.Frame(cfg_buttons)
+full_degauss_row.pack(fill=tk.X, pady=5)
+ttk.Button(full_degauss_row, text="Degauss (full strength)",
+           command=on_full_degauss_click).pack(side=tk.LEFT, fill=tk.X, expand=True)
+full_degauss_hint = ttk.Label(full_degauss_row, text=" ? ", relief='raised',
+                              foreground='blue', cursor='question_arrow')
+full_degauss_hint.pack(side=tk.LEFT, padx=(6, 0))
+Tooltip(full_degauss_hint,
+        "KEEP MAGNETIC MATERIAL AWAY FROM THE MAGNET BEFORE STARTING.\n\n"
+        "Tools, screwdrivers, watches, phones, bank cards and magnetic "
+        "storage media should all be clear of the bore and the surrounding "
+        "bench: this drives the core to its full field in both directions, "
+        "repeatedly.\n\n"
+        "Starts from the selected magnet's own current limit (4.0 A on the "
+        "EM3000S, 4.2 A on the EM7000S) rather than the mild 1 A pass behind "
+        "the Degauss buttons on the Experiment and Magnet tabs. Use it after "
+        "a run that drove the magnet hard, since a mild pass cannot undo "
+        "remanence left by larger loops than it retraces.")
+
 ttk.Separator(cfg_buttons, orient='horizontal').pack(fill='x', pady=10)
 ttk.Button(cfg_buttons, text="ABORT", command=on_abort_click, style='Danger.TButton').pack(fill=tk.X, pady=5)
 
@@ -622,8 +995,10 @@ status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 # --- Start Up ---
 load_config()
 # After load_config: the saved magnet decides whether field mode and the
-# Calibration tab are available at all.
+# Calibration tab are available at all, and the saved voltmeter flag decides
+# whether the DVM settings are reachable.
 apply_magnet_capabilities()
+apply_dvm_state()
 
 # 1. Start the asyncio loop in a separate thread
 t = threading.Thread(target=start_background_loop, args=(loop,), daemon=True)

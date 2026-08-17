@@ -12,6 +12,20 @@ This project was built to interface a Holmarc electromagnet with a VNA to do fie
 | --- | --- |
 | R&S ZNLE | working |
 
+| Nanovoltmeter | Status |
+| --- | --- |
+| Keithley 2182A | optional; **SCPI strings not yet confirmed on hardware** |
+
+Both the magnet and the VNA dropdowns on the Configuration tab also offer **Emulated**,
+which needs no hardware: the magnet prints what it would do, and the VNA replays a saved
+ZNLE18 sweep from `dev/s_parameters.npz`. Useful for working on the app itself, or for
+walking a full sweep through before committing the magnet to it. Detection is unnecessary
+when both are emulated. The voltmeter has no emulated option.
+
+Emulated runs write their calibration to `field_calibration_data_emulated.csv`, so a
+calibration against the emulator (whose field readings are random) cannot overwrite a
+real magnet's curve.
+
 ### Prerequisites
 - VISA Backend: [NI-VISA](https://www.ni.com/en-us/support/downloads/drivers/download.ni-visa.html) sadly the electromagnet does not work with the `pyvisa-py` backend.
 
@@ -55,6 +69,63 @@ class), so calibrating one never overwrites the other's curve. A calibration run
 each point as it is measured and only replaces the existing curve once it has finished,
 keeping the old one under a timestamped `.bak` — an aborted or failed sweep costs you
 nothing.
+
+### Degaussing
+An iron core keeps a remanent magnetisation, so the field at "0 A" is whatever the last
+run left behind, and an upward sweep does not retrace a downward one. **Degauss** (on
+both the Experiment and Magnet tabs) walks that out by alternating the current's polarity
+while decaying its amplitude:
+
+```
++1.00, -0.75, +0.56, -0.42, +0.32, -0.24, +0.18, -0.13, +0.10 A, then off
+```
+
+It starts mild — 1 A, not the magnet's full range — so a routine degauss is not the
+magnet's hardest duty of the day. The trade is that it cannot clear remanence left by
+being driven *harder* than the starting amplitude. Tune `start`, `steps`, `decay` and
+`dwell` under `[Degauss]` in `params.ini`; the start is clamped to the selected magnet's
+own current limit.
+
+For that harder case, **Degauss (full strength)** on the Configuration tab starts from the
+selected magnet's limit instead — 4.0 A on the EM3000S, 4.2 A on the EM7000S, taken from
+the driver so neither is named in the routine. Use it after a run that drove the magnet
+hard. **Keep magnetic material — tools, watches, phones, cards, storage media — clear of
+the magnet before running it**; hover the `?` beside the button for the full warning.
+
+### Nanovoltmeter (optional)
+Tick **Nanovoltmeter connected** on the Experiment tab to record a DC voltage at every
+field point alongside the S-parameters — the electrically-detected FMR channel. That one
+checkbox gates everything: detection skips its GPIB pass without it, the sweep never
+imports the driver, and the plotter draws no voltage axis. Model, input channel and NPLC
+sit on the Configuration tab, greyed out until the box is ticked.
+
+The voltage is written as a comment-prefixed metadata block above each CSV's table rather
+than as a column, because it is one number for the whole field point, not something that
+varies with frequency. A run without the voltmeter produces a file identical to before.
+
+> The 2182A's SCPI strings were written from the documented command structure, not copied
+> from the manual (its text would not extract), so bench-test the driver standalone —
+> `python controllers/K2182A.py` — before trusting a long run.
+
+### Plotting
+**Plotter** opens a window that owns every parameter it needs, including the sweep
+(low/high/step/unit) that names the data folder. It deliberately does *not* follow the
+Experiment tab: those boxes describe the run you are about to take, while plotting is
+usually about a run already finished, so inheriting them meant setting up the next
+measurement silently repointed the plotter at other data. Choose a fit shape (Lorentzian
+or Gaussian), how many peaks to find per trace, and how many traces to draw, then pick a
+figure:
+
+- **Full spectrum** — the four S-parameter maps and the S21 gradient figure, as before,
+  with DC voltage overlaid on a right-hand axis where a run recorded it.
+- **P vs H** — traces along the field axis at evenly spaced frequencies, with detected
+  peak positions in the legend.
+- **dP/dH vs H** — the same, differentiated along field.
+
+The two peak figures stay disabled until their settings are valid. Peaks are found with
+`scipy.signal.find_peaks` and then refined by a fit, because the nearest sampled field is
+quantised to the sweep step; on a 5 mT step the fit recovers a known resonance to 0.03 mT.
+Both maxima and minima count, since a resonance in |S21| is an absorption dip.
 
 ### Data Output
 All data is saved in `\data`. `experiment.py` polls the VNA for its data three times, separated by the stabilisation time set in the Configuration tab. What is saved in the final data file is the mean of the three measurements.

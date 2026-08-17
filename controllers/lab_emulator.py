@@ -58,7 +58,10 @@ class MagnetController:
     Simulates setting current and stopping.
     """
     max_current = 4.0
-    calibration_file = 'field_calibration_data.csv'
+    # Its own file, deliberately not the real magnets'. query_field() below
+    # returns random numbers, so a calibration run against the emulator would
+    # otherwise overwrite a real magnet's curve with noise.
+    calibration_file = 'field_calibration_data_emulated.csv'
 
     def __init__(self, resource_name=None):
         self.inst = None
