@@ -244,6 +244,18 @@ def load_config():
                                        fallback=str(devices.DEFAULT_DVM_CHANNEL)))
         dvm_nplc_var.set(config.get('DVM', 'nplc',
                                     fallback=str(devices.DEFAULT_DVM_NPLC)))
+        # Plotter's own target sweep. No Experiment fallback: an empty box is
+        # the honest state before the user has said what to plot.
+        plot_low_var.set(config.get('Plotter', 'low', fallback=''))
+        plot_high_var.set(config.get('Plotter', 'high', fallback=''))
+        plot_step_var.set(config.get('Plotter', 'step', fallback=''))
+        plot_unit_var.set(config.get('Plotter', 'unit', fallback='A'))
+        plot_sweep_down_var.set(int(config.get('Plotter', 'sweep_down',
+                                               fallback='0')))
+        plot_shape_var.set(config.get('Plotter', 'fit_shape', fallback=''))
+        plot_npeaks_var.set(config.get('Plotter', 'n_peaks', fallback=''))
+        plot_ntraces_var.set(config.get('Plotter', 'n_traces', fallback=''))
+        plot_sparam_var.set(config.get('Plotter', 's_param', fallback='S21'))
         status_var.set("Config loaded successfully.")
     except Exception as e:
         status_var.set("Error reading config file.")
@@ -278,6 +290,11 @@ def save_config():
         config['DVM']['model'] = dvm_model_var.get()
         config['DVM']['channel'] = dvm_channel_var.get() or str(devices.DEFAULT_DVM_CHANNEL)
         config['DVM']['nplc'] = dvm_nplc_var.get() or str(devices.DEFAULT_DVM_NPLC)
+        config['Plotter']['low'] = plot_low_var.get()
+        config['Plotter']['high'] = plot_high_var.get()
+        config['Plotter']['step'] = plot_step_var.get()
+        config['Plotter']['unit'] = plot_unit_var.get()
+        config['Plotter']['sweep_down'] = str(plot_sweep_down_var.get())
         config['Plotter']['fit_shape'] = plot_shape_var.get()
         config['Plotter']['n_peaks'] = plot_npeaks_var.get() or '1'
         config['Plotter']['n_traces'] = plot_ntraces_var.get() or '3'
@@ -296,18 +313,14 @@ def on_detect_click():
 
 def open_plotter_window():
     """
-    Opens the Plotter window, primed with the sweep on the main window.
+    Opens the Plotter window.
 
-    Which run gets plotted is decided by the Experiment tab's low/high/step
-    and unit, because that is what names the data directory. So those are
-    saved first and shown at the top of the window: it is otherwise very easy
-    to plot a different sweep than the one you are looking at.
+    The window owns every parameter it needs, including the sweep that
+    identifies which data to read. Nothing is inherited from the Experiment
+    tab: those boxes describe the run about to be taken, while plotting is
+    usually about a run already finished, so following them meant that setting
+    up the next measurement silently repointed the Plotter at other data.
     """
-    if not (exp_low_var.get() and exp_high_var.get() and exp_step_var.get()):
-        status_var.set("Error: All experiment fields must be filled.")
-        return
-    save_config()
-
     window = tk.Toplevel(root)
     window.title("Plotter")
     window.transient(root)
@@ -315,18 +328,44 @@ def open_plotter_window():
     frame = ttk.Frame(window, padding=12)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    unit = exp_unit_var.get()
-    ttk.Label(frame,
-              text=f"Sweep: {exp_low_var.get()} to {exp_high_var.get()} {unit}, "
-                   f"step {exp_step_var.get()} {unit}"
-                   f"{'  (sweep down)' if exp_sweep_down_var.get() else ''}",
-              foreground='grey').grid(row=0, column=0, columnspan=3,
-                                      sticky='w', pady=(0, 10))
+    # --- which data ---
+    ttk.Label(frame, text="Data to plot", font=('Helvetica', 9, 'bold')).grid(
+        row=0, column=0, columnspan=3, sticky='w')
+    ttk.Label(frame, text="The sweep that names the data folder.",
+              foreground='grey').grid(row=1, column=0, columnspan=3,
+                                      sticky='w', pady=(0, 6))
 
-    # --- fit shape ---
-    ttk.Label(frame, text="Fit shape:").grid(row=1, column=0, sticky='w', pady=4)
+    ttk.Label(frame, text="Low:").grid(row=2, column=0, sticky='w', pady=3)
+    ttk.Entry(frame, textvariable=plot_low_var, width=12, validate='key',
+              validatecommand=vcmd_float).grid(row=2, column=1, sticky='w')
+
+    ttk.Label(frame, text="High:").grid(row=3, column=0, sticky='w', pady=3)
+    ttk.Entry(frame, textvariable=plot_high_var, width=12, validate='key',
+              validatecommand=vcmd_float).grid(row=3, column=1, sticky='w')
+
+    ttk.Label(frame, text="Step:").grid(row=4, column=0, sticky='w', pady=3)
+    ttk.Entry(frame, textvariable=plot_step_var, width=12, validate='key',
+              validatecommand=vcmd_float).grid(row=4, column=1, sticky='w')
+
+    plot_unit_frame = ttk.Frame(frame)
+    plot_unit_frame.grid(row=5, column=0, columnspan=3, sticky='w', pady=4)
+    ttk.Radiobutton(plot_unit_frame, text="A", variable=plot_unit_var,
+                    value="A").pack(side=tk.LEFT, padx=(0, 8))
+    ttk.Radiobutton(plot_unit_frame, text="mT", variable=plot_unit_var,
+                    value="mT").pack(side=tk.LEFT)
+    ttk.Checkbutton(plot_unit_frame, text="Sweep down",
+                    variable=plot_sweep_down_var).pack(side=tk.LEFT, padx=(16, 0))
+
+    ttk.Separator(frame, orient='horizontal').grid(row=6, column=0, columnspan=3,
+                                                   sticky='ew', pady=10)
+
+    # --- peak detection ---
+    ttk.Label(frame, text="Peak detection", font=('Helvetica', 9, 'bold')).grid(
+        row=7, column=0, columnspan=3, sticky='w', pady=(0, 4))
+
+    ttk.Label(frame, text="Fit shape:").grid(row=8, column=0, sticky='w', pady=4)
     shape_frame = ttk.Frame(frame)
-    shape_frame.grid(row=1, column=1, columnspan=2, sticky='w')
+    shape_frame.grid(row=8, column=1, columnspan=2, sticky='w')
     ttk.Radiobutton(shape_frame, text="Lorentzian", value='lorentzian',
                     variable=plot_shape_var,
                     command=_refresh_plot_buttons).pack(side=tk.LEFT, padx=(0, 8))
@@ -334,48 +373,69 @@ def open_plotter_window():
                     variable=plot_shape_var,
                     command=_refresh_plot_buttons).pack(side=tk.LEFT)
 
-    # --- integers ---
-    ttk.Label(frame, text="Peaks per trace (N):").grid(row=2, column=0,
+    ttk.Label(frame, text="Peaks per trace (N):").grid(row=9, column=0,
                                                        sticky='w', pady=4)
     ttk.Entry(frame, textvariable=plot_npeaks_var, width=10, validate='key',
-              validatecommand=vcmd_int).grid(row=2, column=1, sticky='w')
+              validatecommand=vcmd_int).grid(row=9, column=1, sticky='w')
 
-    ttk.Label(frame, text="Traces to show:").grid(row=3, column=0,
+    ttk.Label(frame, text="Traces to show:").grid(row=10, column=0,
                                                   sticky='w', pady=4)
     ttk.Entry(frame, textvariable=plot_ntraces_var, width=10, validate='key',
-              validatecommand=vcmd_int).grid(row=3, column=1, sticky='w')
+              validatecommand=vcmd_int).grid(row=10, column=1, sticky='w')
 
-    ttk.Label(frame, text="S-parameter:").grid(row=4, column=0, sticky='w', pady=4)
+    ttk.Label(frame, text="S-parameter:").grid(row=11, column=0, sticky='w', pady=4)
     ttk.Combobox(frame, textvariable=plot_sparam_var,
                  values=['S11', 'S12', 'S21', 'S22'], state='readonly',
-                 width=8).grid(row=4, column=1, sticky='w')
+                 width=8).grid(row=11, column=1, sticky='w')
 
-    ttk.Separator(frame, orient='horizontal').grid(row=5, column=0, columnspan=3,
+    ttk.Separator(frame, orient='horizontal').grid(row=12, column=0, columnspan=3,
                                                    sticky='ew', pady=10)
 
     # --- plot buttons ---
     global plot_full_button, plot_pvh_button, plot_dpdh_button
     plot_full_button = ttk.Button(frame, text="Full spectrum",
                                   command=lambda: _run_plot('full'))
-    plot_full_button.grid(row=6, column=0, sticky='ew', padx=2)
+    plot_full_button.grid(row=13, column=0, sticky='ew', padx=2)
     plot_pvh_button = ttk.Button(frame, text="P vs H",
                                  command=lambda: _run_plot('pvh'))
-    plot_pvh_button.grid(row=6, column=1, sticky='ew', padx=2)
+    plot_pvh_button.grid(row=13, column=1, sticky='ew', padx=2)
     plot_dpdh_button = ttk.Button(frame, text="dP/dH vs H",
                                   command=lambda: _run_plot('dpdh'))
-    plot_dpdh_button.grid(row=6, column=2, sticky='ew', padx=2)
+    plot_dpdh_button.grid(row=13, column=2, sticky='ew', padx=2)
 
     global plot_hint_label
     plot_hint_label = ttk.Label(frame, text="", foreground='grey',
-                                wraplength=380, justify='left')
-    plot_hint_label.grid(row=7, column=0, columnspan=3, sticky='w', pady=(10, 0))
+                                wraplength=400, justify='left')
+    plot_hint_label.grid(row=14, column=0, columnspan=3, sticky='w', pady=(10, 0))
 
     # Re-check whenever a field changes, so the buttons track validity live.
-    plot_npeaks_var.trace_add('write', lambda *_: _refresh_plot_buttons())
-    plot_ntraces_var.trace_add('write', lambda *_: _refresh_plot_buttons())
+    for var in (plot_low_var, plot_high_var, plot_step_var,
+                plot_npeaks_var, plot_ntraces_var):
+        var.trace_add('write', lambda *_: _refresh_plot_buttons())
     window.protocol("WM_DELETE_WINDOW",
                     lambda: (_forget_plot_buttons(), window.destroy()))
     _refresh_plot_buttons()
+
+
+def _plot_target_problem():
+    """
+    Why no plot can be drawn at all, or None when the target is complete.
+
+    The sweep values name the data directory, so without them there is
+    nothing to read -- this gates every button, including Full spectrum.
+    """
+    for label, var in (("Low", plot_low_var), ("High", plot_high_var),
+                       ("Step", plot_step_var)):
+        text = var.get().strip()
+        if not text or text in ('-', '.'):
+            return f"{label} is required to identify the data."
+        try:
+            float(text)
+        except ValueError:
+            return f"{label} must be a number."
+    if float(plot_step_var.get()) == 0:
+        return "Step cannot be zero."
+    return None
 
 
 def _plot_settings_problem():
@@ -394,21 +454,28 @@ def _plot_settings_problem():
 
 def _refresh_plot_buttons():
     """
-    Enables the peak-based buttons only once their inputs are valid.
+    Tracks the two tiers of requirement.
 
-    'Full spectrum' stays enabled throughout: it draws the same four maps it
-    always has and consumes none of these settings, so gating it behind a
-    peak count it never reads would just block a working feature.
+    Every button needs the target sweep, since that is what locates the data.
+    Only the peak-based buttons additionally need the fit settings -- 'Full
+    spectrum' consumes none of those, so gating it behind a peak count it
+    never reads would block a working feature.
     """
     if plot_pvh_button is None:
         return
-    problem = _plot_settings_problem()
-    state = 'disabled' if problem else 'normal'
-    plot_pvh_button.configure(state=state)
-    plot_dpdh_button.configure(state=state)
+
+    target = _plot_target_problem()
+    settings = _plot_settings_problem()
+
+    plot_full_button.configure(state='disabled' if target else 'normal')
+    peak_state = 'disabled' if (target or settings) else 'normal'
+    plot_pvh_button.configure(state=peak_state)
+    plot_dpdh_button.configure(state=peak_state)
+
     if plot_hint_label is not None:
         plot_hint_label.configure(
-            text=problem or "Peak positions appear in the plot legend.")
+            text=target or settings or
+            "Peak positions appear in the plot legend.")
 
 
 def _forget_plot_buttons():
@@ -419,11 +486,12 @@ def _forget_plot_buttons():
 
 def _run_plot(mode):
     """Saves the Plotter settings, then spawns the plotter in that mode."""
-    if mode in ('pvh', 'dpdh'):
+    problem = _plot_target_problem()
+    if not problem and mode in ('pvh', 'dpdh'):
         problem = _plot_settings_problem()
-        if problem:
-            status_var.set(f"Error: {problem}")
-            return
+    if problem:
+        status_var.set(f"Error: {problem}")
+        return
     save_config()
     schedule_script(PLOTTER_SCRIPT, mode)
 
@@ -652,6 +720,17 @@ dvm_nplc_var = tk.StringVar(value=str(devices.DEFAULT_DVM_NPLC))
 
 # Plotter window state. Held here rather than inside the window so a reopened
 # window comes back with the same settings, and so save_config can reach them.
+#
+# The sweep that identifies the data is the Plotter's own, deliberately not
+# read from the Experiment tab. Those boxes describe the run you are about to
+# take; plotting is usually about a run you took earlier, and quietly following
+# the Experiment tab meant editing it for the next measurement silently
+# repointed the Plotter at data that may not exist.
+plot_low_var = tk.StringVar(value='')
+plot_high_var = tk.StringVar(value='')
+plot_step_var = tk.StringVar(value='')
+plot_unit_var = tk.StringVar(value='A')
+plot_sweep_down_var = tk.IntVar(value=0)
 plot_shape_var = tk.StringVar(value='')      # empty until the user chooses
 plot_npeaks_var = tk.StringVar(value='')
 plot_ntraces_var = tk.StringVar(value='')

@@ -35,18 +35,29 @@ if not os.path.exists(CONFIG_FILE):
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
     
+# Which data to plot comes from [Plotter], not [Experiment]: the Plotter
+# window owns its own sweep boxes so that setting up the next measurement does
+# not silently repoint it at different data.
+if not config.has_section('Plotter'):
+    raise ValueError(
+        "No [Plotter] section in params.ini. Open the Plotter window from the "
+        "Experiment tab and enter the sweep to plot."
+    )
+
 try:
-    # Load Experiment tab values
-    UNIT = config.get('Experiment', 'unit', fallback='A')
-    CURRENT_LOW = float(config.get('Experiment', 'low', fallback='0'))
-    CURRENT_HIGH = float(config.get('Experiment', 'high', fallback='1'))
-    STEP = float(config.get('Experiment', 'step', fallback='0.1'))
-    DOWN = config.getboolean('Experiment', 'sweep_down', fallback=False)
-   
+    UNIT = config.get('Plotter', 'unit', fallback='A')
+    CURRENT_LOW = float(config.get('Plotter', 'low'))
+    CURRENT_HIGH = float(config.get('Plotter', 'high'))
+    STEP = float(config.get('Plotter', 'step'))
+    DOWN = config.getboolean('Plotter', 'sweep_down', fallback=False)
+
     print(UNIT, CURRENT_LOW, CURRENT_HIGH, STEP)
     print("Config loaded successfully.")
 except Exception as e:
-    raise ValueError("Error reading config file.")
+    raise ValueError(
+        f"Could not read the sweep to plot from [Plotter] in {CONFIG_FILE}: "
+        f"{e}. Fill in Low, High and Step in the Plotter window."
+    )
 
 # Plotter window settings. The GUI validates these before enabling its
 # buttons; the fallbacks here only matter when plotter.py is run by hand.
