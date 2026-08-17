@@ -313,14 +313,25 @@ def on_detect_click():
 
 def open_plotter_window():
     """
-    Opens the Plotter window.
+    Opens the Plotter window, its sweep boxes seeded from the Experiment tab.
 
-    The window owns every parameter it needs, including the sweep that
-    identifies which data to read. Nothing is inherited from the Experiment
-    tab: those boxes describe the run about to be taken, while plotting is
-    usually about a run already finished, so following them meant that setting
-    up the next measurement silently repointed the Plotter at other data.
+    Seeded, not linked: the values are copied in each time the window opens,
+    and are then the Plotter's own to edit. That covers the common case -- you
+    have just run a sweep and want to look at it -- without the window
+    silently tracking the Experiment tab afterwards, which would mean setting
+    up the next measurement repointed the Plotter mid-session at data that may
+    not exist.
+
+    The consequence to know about: editing these boxes to look at an older run
+    is not remembered across a close-and-reopen, because reopening seeds them
+    again. The fit settings below are not seeded and do persist.
     """
+    plot_low_var.set(exp_low_var.get())
+    plot_high_var.set(exp_high_var.get())
+    plot_step_var.set(exp_step_var.get())
+    plot_unit_var.set(exp_unit_var.get())
+    plot_sweep_down_var.set(exp_sweep_down_var.get())
+
     window = tk.Toplevel(root)
     window.title("Plotter")
     window.transient(root)
@@ -331,9 +342,11 @@ def open_plotter_window():
     # --- which data ---
     ttk.Label(frame, text="Data to plot", font=('Helvetica', 9, 'bold')).grid(
         row=0, column=0, columnspan=3, sticky='w')
-    ttk.Label(frame, text="The sweep that names the data folder.",
-              foreground='grey').grid(row=1, column=0, columnspan=3,
-                                      sticky='w', pady=(0, 6))
+    ttk.Label(frame, text="The sweep that names the data folder. Copied from\n"
+                          "the Experiment tab; edit to plot a different run.",
+              foreground='grey', justify='left').grid(row=1, column=0,
+                                                      columnspan=3, sticky='w',
+                                                      pady=(0, 6))
 
     ttk.Label(frame, text="Low:").grid(row=2, column=0, sticky='w', pady=3)
     ttk.Entry(frame, textvariable=plot_low_var, width=12, validate='key',

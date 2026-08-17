@@ -261,52 +261,51 @@ def gradient_plotter(currs, freq, s_params, dirname=dir, volts=None):
     return fig
 
 
-def _traces_along_field(currs, freq, s_params, differentiate):
-    """
-    (n_field, n_freq) -> a list of (frequency, trace) running along field.
-
-    This is the reorientation the peak plots are built on: the stored array
-    is indexed by field first, but a resonance moves along field at a fixed
-    frequency, so each trace has to be one frequency row.
-    """
-    matrix = peak_tools.orient_by_field(s_params[f"{S_PARAM} (db)"])
-    if differentiate and currs.size > 1:
-        matrix = np.gradient(matrix, currs, axis=1)
-    return matrix
-
-
 def peak_plotter(currs, freq, s_params, dirname=dir, differentiate=False):
     """
-    1-D traces along the field axis, with detected peaks marked.
+    1-D traces along the field axis, with peak positions marked.
 
     `N_TRACES` frequencies are chosen evenly across the span (first, last and
     evenly between), each drawn as one line, with its peak positions in the
     legend. `N_PEAKS` peaks are sought per trace and refined by a `FIT_SHAPE`
     fit -- see peaks.py for why the fitted position rather than the sampled
     one is what gets reported.
+
+    Peaks are ALWAYS found on the undifferentiated trace, including on the
+    derivative figure. dP/dH does not peak where P peaks -- it crosses zero
+    there, and its own extrema sit on the flanks of the resonance, roughly a
+    half-width to either side. Detecting on the derivative would therefore
+    report a pair of positions that bracket the resonance instead of the
+    resonance itself. Both figures mark the same thing: where P peaks, which
+    on the derivative figure is where it passes through zero.
     """
     if currs.size < 2:
         print("Need at least 2 sweep points to plot along field; skipping.")
         return None
 
-    matrix = _traces_along_field(currs, freq, s_params, differentiate)
-    chosen = peak_tools.select_evenly(matrix.shape[0], N_TRACES)
+    # Detection always runs on `raw`; only `plotted` changes with the mode.
+    raw = peak_tools.orient_by_field(s_params[f"{S_PARAM} (db)"])
+    plotted = np.gradient(raw, currs, axis=1) if differentiate else raw
+
+    chosen = peak_tools.select_evenly(raw.shape[0], N_TRACES)
     quantity = (f"d|{S_PARAM}| / d{'Field' if UNIT == 'mT' else 'Current'}"
                 if differentiate else f"|{S_PARAM}|")
     ylabel = f"{quantity} (dB/{UNIT})" if differentiate else f"{quantity} (dB)"
 
     print(f"{'dP/dH' if differentiate else 'P'} vs H: {len(chosen)} trace(s) "
-          f"of {matrix.shape[0]}, {N_PEAKS} peak(s) each, {FIT_SHAPE} fit")
+          f"of {raw.shape[0]}, {N_PEAKS} peak(s) each, {FIT_SHAPE} fit")
+    if differentiate:
+        print(f"  peak positions taken from |{S_PARAM}|, not from its "
+              f"derivative (the derivative is zero there)")
 
     fig, ax = plt.subplots(figsize=(9, 5.5))
     colours = plt.cm.viridis(np.linspace(0, 0.9, max(len(chosen), 1)))
 
     for colour, row in zip(colours, chosen):
-        trace = matrix[row]
-        result = peak_tools.fit_trace(currs, trace, N_PEAKS, FIT_SHAPE)
+        result = peak_tools.fit_trace(currs, raw[row], N_PEAKS, FIT_SHAPE)
         label = peak_tools.format_peak_label(
             result, UNIT, prefix=f"{freq[row]*1e-9:.3f} GHz - ")
-        ax.plot(currs, trace, color=colour, linewidth=1.4, label=label)
+        ax.plot(currs, plotted[row], color=colour, linewidth=1.4, label=label)
         # Mark each fitted peak on the trace it belongs to, so a legend entry
         # can be tied back to a feature by eye.
         for centre, ok in zip(result['centres'], result['converged']):
@@ -316,10 +315,17 @@ def peak_plotter(currs, freq, s_params, dirname=dir, differentiate=False):
             print(f"  {freq[row]*1e-9:.3f} GHz: found {result['found']} of "
                   f"{result['requested']} requested peaks")
 
+    if differentiate:
+        # The zero line is what the marked positions sit on, so draw it.
+        ax.axhline(0.0, color='grey', linewidth=0.8, alpha=0.6, zorder=0)
+
     ax.set_xlabel(AXIS_LABEL)
     ax.set_ylabel(ylabel)
-    ax.set_title(f"{quantity} vs {'field' if UNIT == 'mT' else 'current'}, "
-                 f"{FIT_SHAPE} fit")
+    title = (f"{quantity} vs {'field' if UNIT == 'mT' else 'current'}, "
+             f"{FIT_SHAPE} fit")
+    if differentiate:
+        title += f"\npeak positions from |{S_PARAM}| (zero crossings here)"
+    ax.set_title(title)
     ax.legend(fontsize='small', loc='best', framealpha=0.9)
     plt.tight_layout()
     name = "dpdh_vs_h_peaks.png" if differentiate else "p_vs_h_peaks.png"
