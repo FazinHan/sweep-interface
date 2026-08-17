@@ -43,10 +43,18 @@ MAGNETS = {
     # Control signals captured and verified, but its gaussmeter is broken, so
     # no field calibration can be taken: Amps only (see EM7000S.py).
     'EM7000S': MagnetSpec('EM7000S', 'MagnetController', supports_field=False),
+    # No hardware: prints what it would do. For working on the app itself
+    # without the rig, and for exercising a full sweep before committing the
+    # magnet to one. Supports mT because its set_field needs no calibration.
+    'Emulated': MagnetSpec('lab_emulator', 'MagnetController'),
 }
 
 VNAS = {
     'ZNLE': ('VNA', 'VNAController'),
+    # Replays a saved ZNLE18 sweep from dev/s_parameters.npz. The same data at
+    # every field point, so maps come out flat along the field axis -- it
+    # exercises the plumbing, not the physics.
+    'Emulated': ('lab_emulator', 'VNAController'),
 }
 
 #: Nanovoltmeters. Unlike the magnet and VNA this instrument is optional --

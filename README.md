@@ -16,6 +16,16 @@ This project was built to interface a Holmarc electromagnet with a VNA to do fie
 | --- | --- |
 | Keithley 2182A | optional; **SCPI strings not yet confirmed on hardware** |
 
+Both the magnet and the VNA dropdowns on the Configuration tab also offer **Emulated**,
+which needs no hardware: the magnet prints what it would do, and the VNA replays a saved
+ZNLE18 sweep from `dev/s_parameters.npz`. Useful for working on the app itself, or for
+walking a full sweep through before committing the magnet to it. Detection is unnecessary
+when both are emulated. The voltmeter has no emulated option.
+
+Emulated runs write their calibration to `field_calibration_data_emulated.csv`, so a
+calibration against the emulator (whose field readings are random) cannot overwrite a
+real magnet's curve.
+
 ### Prerequisites
 - VISA Backend: [NI-VISA](https://www.ni.com/en-us/support/downloads/drivers/download.ni-visa.html) sadly the electromagnet does not work with the `pyvisa-py` backend.
 
@@ -98,9 +108,13 @@ varies with frequency. A run without the voltmeter produces a file identical to 
 > `python controllers/K2182A.py` — before trusting a long run.
 
 ### Plotting
-**Plotter** opens a window primed with the sweep entered on the main window. Choose a fit
-shape (Lorentzian or Gaussian), how many peaks to find per trace, and how many traces to
-draw, then pick a figure:
+**Plotter** opens a window that owns every parameter it needs, including the sweep
+(low/high/step/unit) that names the data folder. It deliberately does *not* follow the
+Experiment tab: those boxes describe the run you are about to take, while plotting is
+usually about a run already finished, so inheriting them meant setting up the next
+measurement silently repointed the plotter at other data. Choose a fit shape (Lorentzian
+or Gaussian), how many peaks to find per trace, and how many traces to draw, then pick a
+figure:
 
 - **Full spectrum** — the four S-parameter maps and the S21 gradient figure, as before,
   with DC voltage overlaid on a right-hand axis where a run recorded it.
