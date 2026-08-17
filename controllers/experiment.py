@@ -76,7 +76,14 @@ if dvm is not None:
 
 print("Sweeping...")
 
-currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP, STEP)
+# Stop half a step past `high` rather than a full step. arange excludes its
+# stop, so `+ STEP` is meant to make `high` inclusive -- but when floating
+# point puts the computed stop a hair above high + step, one extra point slips
+# in beyond the requested range (0 -> 0.2 step 0.1 produced a 0.3 point). That
+# drives the magnet past what was asked for, and if `high` is near the current
+# limit the extra point trips the driver's range assert and loses the run.
+# Half a step is unambiguous: it includes `high` and cannot reach high + step.
+currs = np.arange(CURRENT_LOW, CURRENT_HIGH + STEP / 2, STEP)
 if DOWN:
     currs = currs[::-1]  # Reverse the array if sweeping down
 
